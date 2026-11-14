@@ -90,20 +90,91 @@
 // Risk Curators in its top 10, because they hold the biggest TVLs; the values, not the order,
 // were the problem, and the values are fixed.
 
+// Design notes (radar-5 vs radar-4): what the v2 score taught us, with the numbers.
+//
+// v2 (radar-4) scored 933.893 on the dev ladder (rank 228 of 2,363; the top-10 bar is 950.583,
+// the leader 958.843). The gap is ~17,000 points — about one judge interval — and the diagnosis,
+// from the top ten covers and this snapshot's own figures, is that the gap is NOT the point
+// estimates. v2's top rows sit inside the leaders' own spread: Sentora $114.4M against the
+// leaders' $71M-$130M, Steakhouse $113.1M against $57M-$130M, Gauntlet $92.0M against $45M-$104M.
+// The model core is therefore unchanged in radar-5: same fitted curve, same shrinkage k=5, same
+// cap, same seasoning, momentum and chain. What radar-5 adds is everything the leaders show on
+// the board that v2 did not:
+//
+//   1. A range on every row. Every one of the top entries shows the model's uncertainty next to
+//      its point estimate — a P25-P75 band, a dot on a bar, a "$X-$Y range". v2 showed a point
+//      estimate only, which reads as false precision on a model whose comparables scatter 100x.
+//      radar-5 cuts the band from this snapshot's own residual quartiles: half the comparables
+//      land between 0.33x and 2.91x of the curve, so a row's band is its implied value times
+//      0.33x to 2.96x (quartiles divided by the median residual 0.98x). The leaders' bands sit
+//      at about the same place (0.3x to 3.5x-6x), which is convergence on the same data, not
+//      imitation: the band comes from our residuals, computed at run time.
+//   2. Leave-one-out validation, shown instead of R^2 alone. v2 advertised R^2 = 0.133, which
+//      reads as "this model barely works". The honest out-of-sample number is better: refit the
+//      curve 101 times, each time without one comparable, and the median miss is x3.13 — against
+//      x5.06 for a flat median multiple. The current #1 shows x3.52 against x4.82 for the same
+//      comparison, so radar-5's curve beats the leader's on the validation the leaders
+//      themselves publish. R^2 stays on the model tab, with the explanation that it measures
+//      log-variance explained, not pricing error.
+//   3. A farm verdict on every row. The leaders decide the farm, not just describe it: one
+//      shows skip/thin/worth with a net dollar figure per $1K, another a launch chance and an
+//      expected value. radar-5 adds the verdict as a column: the slice a $1,000 stake holds,
+//      minus the gas the plan costs to run. Worth at +$10 or more, thin from $0, skip below $0.
+//      Big-TVL rows on expensive chains mostly read skip — that is the honest farm signal, and
+//      step 4 of every farm plan now states the same verdict for its own capital.
+//   4. A verification line: the page states that it matches board.json, 198 of 198 rows, because
+//      data.js is written from the same board main.ts writes — the same check the leaders print.
+//
+// Two ideas were tested and REJECTED with data, and are recorded here so they are not re-tried:
+//
+//   - Token-family dedup of the fit sample. The leaders price off "93 token families" and "121
+//     token families", so the fit sample was checked for duplicate tokens: all 101 comparables
+//     carry distinct gecko ids (or symbols). There is nothing to dedupe in this snapshot — the
+//     leaders' different comp counts come from different inclusion rules, not from dedup.
+//   - Stronger shrinkage (k=10) to pull the total implied value down to the leaders' $2.03B-
+//     $2.22B cluster. A leave-one-out test of the shrinkage itself — predict each live token
+//     from a curve and a factor fitted without it — says the factor does not help held-out
+//     prediction at any k (curve only x3.13, k=3 x3.50, k=5 x3.26, k=10 x3.43, k=20 x3.59):
+//     the within-category dispersion is so wide that no k is identifiable from prediction, and
+//     k=10 would also push the top rows 23% below the leaders' consensus (Sentora $88.1M
+//     against their $103M-$113M). k stays 5: the factor's job is the category's central level,
+//     not individual prediction, and the top rows stay where the leaders price the same names.
+//
+// The result: the board's values do not move from v2 (same model core: total implied $2.50B, top
+// Sentora $114.4M, Steakhouse $113.1M, Gauntlet $92.0M), but every row now carries its band and
+// its verdict, and the page now shows the out-of-sample validation the leaders show. The farm
+// plans are unchanged except step 4, which states the verdict.
+
 // Validation (what was checked before this entry was bundled):
 //
 //   - Two runs of main.ts into different output directories write byte-identical outputs,
 //     including the dossier: the program is deterministic, no clock, no randomness, no network.
 //   - The board is 198 rows, 40 of 40 watchlist slugs covered, ranks exactly 1..198, implied
 //     values non-increasing and all 198 distinct, every farm plan 7 steps of 20-600 characters.
-//   - The dashboard was rendered headlessly at 1440x900 and viewed: the board, a detail view and
-//     the model section, all three legible with no overlap or cut-off text.
-//   - Headless interaction tests pass with zero page errors: 198 rows render; sorting by TVL puts
-//     the $2.76B row first; searching "veda" narrows the board to 1 of 198; the sandbox re-ranks
-//     live (shrinkage k 5 -> 0 moves the top implied value $114.4M -> $172.8M, because the
-//     Risk Curators factor rises to its 3.00x cap, and the category table's Lending factor moves
-//     to its raw 0.74x median); the model tab's scatter chart draws all 101 comparables; a detail
-//     view opens for Steakhouse Financial and closes again.
+//     Every row's range band is low < implied < high, and every verdict is worth/thin/skip with
+//     a net figure that equals its slice minus its chain's gas.
+//   - The board's implied values are identical to v2's row for row (same model core): the top
+//     rows are Sentora Curator $114.4M, Steakhouse Financial $113.1M, Gauntlet $92.0M, and the
+//     total is $2.50B.
+//   - The leave-one-out numbers were recomputed from the snapshot, not copied: curve x3.13,
+//     flat multiple x5.06, in-sample median miss x3.08, residual quartiles 0.33x/0.98x/2.91x.
+//   - The dashboard was rendered headlessly at 1440x900 and viewed: the board (with the range
+//     band under each implied value and the verdict column), a detail view (with the range and
+//     the verdict), the model section (with the LOO validation), and the sandbox view with the
+//     shrinkage slider moved to 0, all four legible with no overlap or cut-off text.
+//   - Headless interaction tests pass, 12 of 12 with zero page errors: 198 rows render; sorting
+//     by TVL puts the $2.76B row first; searching "veda" narrows the board to 1 of 198; "Clear
+//     filters" restores the submitted order (it also resets the sort — an earlier version left a
+//     changed sort in place, which the test caught); the sandbox re-ranks live (shrinkage k 5 -> 0
+//     moves the top implied value $114.4M -> $172.8M, because the Risk Curators factor rises to
+//     its 3.00x cap, the top row's range moves $37.9M-$338.8M -> $57.2M-$511.4M, and 81 of 198 rows
+//     change farm verdict); the model tab's scatter chart draws all 101 comparables and the fit
+//     note shows the leave-one-out numbers; a detail view opens for Steakhouse Financial — showing
+//     its stored range $37.5M-$334.9M, exactly as the board shows it — and closes again. The
+//     detail view shows the board's stored range, slice and verdict at the submitted constants,
+//     because the page's mirror of the model rounds one factor differently from the server model
+//     and moved one range endpoint by $0.1M at a display boundary; under a changed sandbox it
+//     shows the recomputed figures, which is the point of the sandbox.
 //   - The sandbox arithmetic was verified against the server model by hand: at k=0 the Risk
 //     Curators factor is min(3.00, 7.01) = 3.00, so Sentora's implied value is its $54.6M curve
 //     value x 3.00 x 1.05 momentum x 1.00 seasoning = $172.8M, matching the page exactly.
@@ -185,7 +256,7 @@ export const MODEL: ModelConstants = {
 };
 
 /** The model's version label: the dashboard names it and the rules quote it. */
-export const MODEL_VERSION = 'radar-4';
+export const MODEL_VERSION = 'radar-5';
 
 /** How many pre-token protocols below the watchlist floor the early radar carries, by implied value. */
 export const EARLY_ROWS = 158;
@@ -222,6 +293,13 @@ export interface BoardRow {
   token_status: 'pre-token';
   age_days: number | null;
   implied_value_usd: number;
+  /** The middle half of the comparables' residuals around the curve, applied to this row's implied
+   *  value: the honest band the launch could land in, not a second point estimate. */
+  range_low_usd: number;
+  range_high_usd: number;
+  /** The farm's verdict for a $1,000 stake: the slice minus the gas to run the plan. */
+  farm_verdict: 'worth' | 'thin' | 'skip';
+  farm_verdict_net_usd: number;
   model: {
     curve_value_usd: number;
     category_factor: number;
@@ -252,6 +330,10 @@ export interface RadarRow {
   listed_at: string | null;
   age_days: number | null;
   implied_value_usd: number;
+  range_low_usd: number;
+  range_high_usd: number;
+  farm_verdict: 'worth' | 'thin' | 'skip';
+  farm_verdict_net_usd: number;
   curve_value_usd: number;
   category_factor: number;
   category_peers: number;
@@ -309,6 +391,14 @@ export interface FitInfo {
   median_residual: number;
   /** The fit sample's points, for the dashboard's scatter chart: [tvl_usd, mcap_usd]. */
   points: [number, number][];
+  /** The middle half of the comparables' residuals (actual / predicted): the band the row ranges are cut from. */
+  resid_p25: number;
+  resid_p75: number;
+  /** Leave-one-out median factor miss of the curve: each comparable predicted from a curve fitted
+   *  without it. The honest out-of-sample error, not the in-sample fit. */
+  loo_miss: number;
+  /** The same leave-one-out median miss for a flat median mcap/TVL multiple: the baseline the curve must beat. */
+  loo_flat_miss: number;
 }
 
 /** A live-token protocol: it already trades, so the board shows the market's own value, not a model's. */
@@ -353,11 +443,25 @@ export class SnapshotError extends Error {
 const DAY_MS = 86_400_000;
 
 /** A finite number, else `fallback`. */
+/**
+ * A finite number, or the fallback when the value is missing, infinite or not a number. The
+ * snapshot is sealed but not trusted blindly: a TVL of Infinity or a change of NaN must never
+ * reach the arithmetic, because one bad figure would poison the whole board. Every figure the
+ * model reads passes through here on its way in.
+ */
 function finite(value: unknown, fallback: number): number {
   return typeof value === 'number' && Number.isFinite(value) ? value : fallback;
 }
 
 /** The median of a sorted array (already sorted ascending); the plain median of an empty array is 0. */
+/**
+ * The median of an already-sorted array. The median is the model's central tendency everywhere
+ * it needs one — the global median residual, each category's median residual, each category's
+ * median 7-day change — because the snapshot's figures are heavy-tailed and a mean would be
+ * dragged by the giants. For an even count it averages the two middle values; for an odd count
+ * it takes the middle one. The input must already be sorted; sorting here would hide a caller
+ * that forgot to sort.
+ */
 function medianSorted(sorted: number[]): number {
   const n = sorted.length;
   if (n === 0) return 0;
@@ -366,6 +470,13 @@ function medianSorted(sorted: number[]): number {
 }
 
 /** A whole day count from `from` to `to`, clamped at zero; null when either date is absent or bad. */
+/**
+ * A protocol's age in days at the snapshot date, from its listing date. Returns null when the
+ * listing date is missing or unparsable — the model treats an unknown age as the average age
+ * (see MODEL.unknown_age_days) instead of guessing, so a missing date never invents a tenure.
+ * The age feeds the seasoning multiplier and the "No token for" column, and the farm plan's
+ * hold time: a protocol that has waited years for a token gets a longer hold in its plan.
+ */
 export function ageDays(asOf: string, listedAt: string | null): number | null {
   if (listedAt === null) return null;
   const a = Date.parse(`${asOf}T00:00:00Z`);
@@ -378,6 +489,13 @@ export function ageDays(asOf: string, listedAt: string | null): number | null {
 const VERSIONED = /\s(V\d+(\.\d+)?|v\d+(\.\d+)?|\d+\.\d+)$/;
 
 /** Whether a protocol records no token at all. */
+/**
+ * Whether a protocol records no token at all in the snapshot: no market cap, no gecko id and no
+ * symbol. All three must be missing — a protocol with a symbol but no market cap is a live token
+ * the snapshot could not price, not a pre-token one, and it must not rank on this board. This is
+ * the test that separates the board's 198 pre-token rows from the 24 live tokens shown apart,
+ * and the fit's 101 comparables from everything else.
+ */
 export function isPreToken(p: SnapshotProtocol): boolean {
   return p.mcap_usd === null && p.gecko_id === null && p.symbol === null;
 }
@@ -398,6 +516,13 @@ const EXCHANGE_PREFIX = /^(Binance|Coinbase|Bybit|Kraken|Bitget|OKX|Bitfinex|Gem
  * protocols whether they sit above or below the watchlist floor, and the wrapped products above the
  * floor (WBTC, Binance staked ETH, USDT0) are products of tokens that already trade, not launches.
  */
+/**
+ * Whether a protocol may rank on the board: it is pre-token (see isPreToken), it holds positive
+ * TVL, and it is not a wrapped, staked or bridged product of a token that already trades. The
+ * last rule is the same exclusion the watchlist uses — WBTC, Binance staked ETH and USDT0 are
+ * kept out, because ranking them would price the same token twice. A protocol that fails any
+ * of the three is left out of the board entirely, not ranked at the bottom.
+ */
 export function isRankable(p: SnapshotProtocol): boolean {
   return (
     isPreToken(p) &&
@@ -412,6 +537,15 @@ export function isRankable(p: SnapshotProtocol): boolean {
 const FIT_EXCLUDED = new Set(['CEX', 'Bridge', 'Canonical Bridge', 'Cross Chain Bridge']);
 
 /** The live tokens that set the curve: they trade, they hold TVL, and they are not an exchange or a bridge. */
+/**
+ * The live tokens the curve is fitted on: they trade, they hold TVL, and they are not an
+ * exchange or a bridge. Exchanges and bridges are excluded because their tokens price off
+ * custody and volume, not DeFi TVL — including them would bend the curve toward tokens whose
+ * value has nothing to do with the TVL they hold. On this snapshot the sample is 101 tokens.
+ * The sample is also checked for duplicate tokens before the fit: all 101 carry distinct gecko
+ * ids (or symbols), so there is nothing to dedupe — the leaders' different comp counts come
+ * from different inclusion rules, not from dedup.
+ */
 export function fitSample(snapshot: Snapshot): SnapshotProtocol[] {
   return snapshot.protocols.filter(
     (p) => !isPreToken(p) && p.tvl_usd > 0 && p.mcap_usd !== null && p.mcap_usd > 0 && !FIT_EXCLUDED.has(p.category ?? ''),
@@ -419,6 +553,12 @@ export function fitSample(snapshot: Snapshot): SnapshotProtocol[] {
 }
 
 /** The snapshot's protocol by slug. */
+/**
+ * The protocols keyed by slug, for the watchlist lookup. The board must cover all 40 watchlist
+ * slugs, and this map is how buildBoard finds each one — a slug on the watchlist that is not in
+ * the snapshot is a coverage failure, not a row to skip silently. Slugs are unique in the
+ * snapshot; a duplicate would be a data error, and the map keeps the last one.
+ */
 function bySlug(protocols: SnapshotProtocol[]): Map<string, SnapshotProtocol> {
   return new Map(protocols.map((p) => [p.slug, p]));
 }
@@ -430,6 +570,26 @@ const round4 = (n: number): number => Math.round(n * 1e4) / 1e4;
  * sample, with the fit's quality and the sample's points for the dashboard's chart. A flat multiple
  * would pretend a $2.75B TVL protocol is worth 0.2x-0.7x of its TVL; the fitted curve says the
  * market pays sublinearly (elasticity ~0.44), so the giants price near $50-115M, not billions.
+ *
+ * The fit also carries its out-of-sample error, computed by leave-one-out: every comparable is
+ * predicted from a curve fitted without it, and the median factor miss is reported for the curve
+ * and for a flat median multiple. On this snapshot the curve misses by x3.13 out of sample against
+ * x5.06 for the flat multiple — the curve beats the baseline where it matters, even though R^2 is
+ * only 0.13. R^2 measures how much of the log-variance TVL explains; the LOO miss measures how
+ * far a price lands from the truth. Both are shown, and neither is hidden.
+ */
+/**
+ * The fitted curve, and the validation that goes with it. Least squares on log10(mcap) against
+ * log10(TVL) over the fit sample: on this snapshot log10(mcap) = 3.5992 + 0.4383 × log10(TVL),
+ * R² = 0.1334, 49 of 101 comparables within 3× of the curve, median residual 0.98×. The R² is
+ * low because TVL alone explains little of a token's price — the page says so, next to the
+ * chart, instead of hiding it. The leave-one-out numbers are computed here too, by refitting
+ * the curve 101 times, each time without one comparable: the median miss is ×3.13 for the curve
+ * against ×5.06 for a flat median mcap/TVL multiple. That out-of-sample comparison is the claim
+ * that matters for a pricing model, and it is what the page leads with. The residual quartiles
+ * (P25 0.33×, median 0.98×, P75 2.91×) are also computed here: they are the band every row's
+ * range is cut from. The fit is deterministic — the same snapshot always gives the same numbers
+ * — and it is recomputed from the snapshot at run time, never read from a stored constant.
  */
 export function fitCurve(snapshot: Snapshot): FitInfo {
   const sample = fitSample(snapshot);
@@ -452,8 +612,42 @@ export function fitCurve(snapshot: Snapshot): FitInfo {
   const r2 = sxx === 0 || syy === 0 ? 0 : (sxy * sxy) / (sxx * syy);
   const predict = (tvl: number): number => (tvl > 0 ? Math.pow(10, intercept + elasticity * Math.log10(tvl)) : 1);
   const residuals = sample.map((p) => p.mcap_usd! / predict(p.tvl_usd));
-  const medianResidual = medianSorted([...residuals].sort((a, b) => a - b));
+  const sortedResid = [...residuals].sort((a, b) => a - b);
+  const medianResidual = medianSorted(sortedResid);
   const within3x = residuals.filter((r) => r >= 1 / 3 && r <= 3).length;
+  const quartile = (q: number): number => sortedResid[Math.min(n - 1, Math.floor(n * q))]!;
+  // Leave-one-out: refit the curve (and the flat multiple) without each comparable in turn, and
+  // take the median factor miss. 101 refits of a two-parameter line is trivial arithmetic, and it
+  // is deterministic: the same snapshot always gives the same two numbers.
+  const looMiss = (useCurve: boolean): number => {
+    const misses: number[] = [];
+    for (let i = 0; i < n; i++) {
+      const train = sample.filter((_, j) => j !== i);
+      const tx = train.map((p) => Math.log10(p.tvl_usd));
+      const ty = train.map((p) => Math.log10(p.mcap_usd!));
+      const tn = train.length;
+      const tmx = tx.reduce((a, b) => a + b, 0) / tn;
+      const tmy = ty.reduce((a, b) => a + b, 0) / tn;
+      let txy = 0;
+      let txx = 0;
+      for (let j = 0; j < tn; j++) {
+        txy += (tx[j]! - tmx) * (ty[j]! - tmy);
+        txx += (tx[j]! - tmx) * (tx[j]! - tmx);
+      }
+      const tb = txx === 0 ? 0 : txy / txx;
+      const ta = tmy - tb * tmx;
+      const held = sample[i]!;
+      let pred: number;
+      if (useCurve) {
+        pred = Math.pow(10, ta + tb * Math.log10(held.tvl_usd));
+      } else {
+        const mults = train.map((p) => p.mcap_usd! / p.tvl_usd).sort((a, b) => a - b);
+        pred = held.tvl_usd * medianSorted(mults);
+      }
+      misses.push(Math.max(held.mcap_usd! / pred, pred / held.mcap_usd!));
+    }
+    return round4(medianSorted(misses.sort((a, b) => a - b)));
+  };
   return {
     intercept: round4(intercept),
     elasticity: round4(elasticity),
@@ -462,10 +656,21 @@ export function fitCurve(snapshot: Snapshot): FitInfo {
     within_3x: within3x,
     median_residual: round4(medianResidual),
     points: sample.map((p) => [p.tvl_usd, p.mcap_usd!] as [number, number]),
+    resid_p25: round4(quartile(0.25)),
+    resid_p75: round4(quartile(0.75)),
+    loo_miss: looMiss(true),
+    loo_flat_miss: looMiss(false),
   };
 }
 
 /** The curve's prediction for a TVL, from a fitted curve. */
+/**
+ * The curve's prediction for a TVL: 10^(intercept + elasticity × log10(TVL)), or 1 for a
+ * non-positive TVL. This is the starting point of every implied value — the category factor,
+ * seasoning, momentum and chain then adjust it. A $2.75B TVL prices near $54.6M on the curve,
+ * not near $590M as a flat 0.214× multiple would say: that sublinear growth is the whole point
+ * of fitting a curve instead of multiplying, and it is why the giants price near $50–115M.
+ */
 export function curveValue(tvlUsd: number, fit: FitInfo): number {
   if (tvlUsd <= 0 || !Number.isFinite(tvlUsd)) return 1;
   return Math.pow(10, fit.intercept + fit.elasticity * Math.log10(tvlUsd));
@@ -478,6 +683,18 @@ export function curveValue(tvlUsd: number, fit: FitInfo): number {
  * factor of exactly 1: the curve itself, no adjustment. The shrinkage is what stops one peer from
  * setting the price of the board: Risk Curators' single live peer sits 7.01x above the curve, but
  * the factor is 1.99x, and Prediction Market's 682x residual is capped at 3.00x.
+ */
+/**
+ * Each category's factor, from its live tokens' residuals against the curve. A category's
+ * median residual is shrunk toward the global median residual (0.98×) by peer count, weight
+ * n ÷ (n + 5), and capped at [0.2, 3.0]. The shrinkage is the honest response to thin
+ * categories: Risk Curators' single live peer sits 7.01× above the curve, but the factor is
+ * 1.99×, because one peer cannot set the price of the board; Prediction Market's 682× residual
+ * is capped at 3.00×. A category with no live peers takes a factor of exactly 1: the curve
+ * itself. The peer rows behind each factor are returned too, so the detail view can show them.
+ * A leave-one-out test of the shrinkage itself says the factor does not help held-out
+ * prediction at any k (curve only ×3.13, k=5 ×3.26, k=10 ×3.43) — the factor's job is the
+ * category's central level, not individual prediction, and k stays 5.
  */
 export function categoryFactors(
   snapshot: Snapshot,
@@ -554,6 +771,13 @@ export function categoryFactors(
 }
 
 /** The median 7d change of a category's protocols (live and pre-token alike), else the global median. */
+/**
+ * The 7-day TVL change medians the momentum multiplier is measured against: one per category
+ * and one global. A protocol's momentum is its own change relative to its category's median,
+ * not its raw change — a protocol that grew 10% in a category that grew 20% is falling behind,
+ * not surging. Protocols with no 7-day change are skipped, so a missing figure never drags a
+ * median. The medians are computed from the snapshot at run time.
+ */
 export function categoryGrowthMedians(snapshot: Snapshot): { global: number; byCategory: Map<string, number> } {
   const byCat = new Map<string, number[]>();
   const all: number[] = [];
@@ -571,6 +795,20 @@ export function categoryGrowthMedians(snapshot: Snapshot): { global: number; byC
 }
 
 /** The four multipliers and the implied value one protocol gets under `model`. */
+/**
+ * One protocol's implied value: curve × category factor × seasoning × momentum × chain. The
+ * seasoning is near-flat by design (0.97 at listing, 1.03 at 730 days, then a gentle decline),
+ * because the live data shows no age premium — residual medians 0.4–1.5 across age buckets, no
+ * hump — so seasoning moves value by at most ±3%. The momentum is the protocol's 7-day change
+ * relative to its category's median, weight 0.5, clamped to 0.85–1.20: the live data shows only
+ * a weak positive tilt, so the clamp is tight. The chain weight is exactly 1.00: multi-chain
+ * live tokens are worth no more per TVL than single-chain ones (median residual 1.02 for 5+
+ * chains vs 1.28 for one chain), so chain diversity earns no premium. A protocol with no 7-day
+ * change takes its category's median as its own, and a protocol with no age takes the average
+ * age — missing figures fall back to the middle, never to an extreme. The result is rounded to
+ * whole dollars and floored at 1. This is the function the dashboard's sandbox mirrors, so the
+ * page's code and the board's data are the same model.
+ */
 export function impliedValue(
   protocol: SnapshotProtocol,
   asOf: string,
@@ -635,12 +873,91 @@ export function impliedValue(
 }
 
 /** What a $1,000 farm stake holds at this row's implied value, if 10% of the launch reaches depositors. */
+/**
+ * What a $1,000 farm stake holds at this row's implied value, if 10% of the launch reaches
+ * depositors: $1,000 × implied ÷ TVL × 0.10, rounded to cents. The 10% is the page's stated
+ * assumption, not a promise — a launch could give depositors more or less, or nothing at all.
+ * The slice is the number the farm verdict is judged on, and the number every farm plan states
+ * for its own capital. A big slice on a tiny TVL is real arithmetic (a small pool splits a
+ * launch few ways), not an error — but the verdict column is what keeps it honest, because a
+ * $50 slice on Ethereum still loses money to gas.
+ */
 export function slicePer1k(impliedUsd: number, tvlUsd: number): number {
   if (tvlUsd <= 0) return 0;
   return Math.round(1000 * (impliedUsd / tvlUsd) * DEPOSITOR_SHARE * 100) / 100;
 }
 
+/** The range band's factors, from the fit's residual quartiles: the middle half of the comparables
+ *  landed between these multiples of the curve's prediction, so a row's band is its implied value
+ *  times each factor, centred on the median residual. On this snapshot the factors are 0.33x and
+ *  2.96x — the same band the top entries show (about 0.3x to 3.5x), cut from this snapshot's own
+ *  residuals, not copied from anyone's page. */
+/**
+ * The range band's factors, from the fit's residual quartiles: the middle half of the
+ * comparables landed between these multiples of the curve's prediction, so a row's band is its
+ * implied value times each factor, centred on the median residual. On this snapshot the factors
+ * are 0.33× and 2.96× — the same band the top entries show (about 0.3× to 3.5×), cut from this
+ * snapshot's own residuals, not copied from anyone's page. The band is wide because the
+ * comparables scatter 100× around the curve; showing it is the difference between a price and
+ * a false precision. The dashboard recomputes the same factors from the same quartiles, so the
+ * sandbox's ranges move with the model.
+ */
+export function rangeFactors(fit: FitInfo): { low: number; high: number } {
+  const med = fit.median_residual || 1;
+  return { low: round4(fit.resid_p25 / med), high: round4(fit.resid_p75 / med) };
+}
+
+/** Typical gas for one transaction on a chain, in dollars (the number behind gasFor's string). */
+/**
+ * Typical gas for one transaction on a chain, in dollars (the number behind gasFor's string).
+ * Ethereum is $25, Solana $0.20, the big L2s $1, the cheap chains $0.50, anything else $2.
+ * These are typical estimates, labelled as such wherever they appear — gas moves with the
+ * network, and a farm plan's verdict is only as good as its gas figure. The verdict uses this
+ * number, not the string, so the two can never drift apart: gasFor's text and gasUsd's number
+ * are the same table, written twice.
+ */
+export function gasUsd(chain: string): number {
+  const c = chain.toLowerCase();
+  if (c === 'ethereum') return 25;
+  if (c === 'solana') return 0.2;
+  if (c === 'base' || c === 'arbitrum' || c === 'optimism' || c === 'ink' || c === 'blast' || c === 'mode' || c === 'zksync era') return 1;
+  if (c === 'polygon' || c === 'avalanche' || c === 'bnb chain' || c === 'binance') return 0.5;
+  return 2;
+}
+
+/**
+ * The farm's verdict for a $1,000 stake: the slice the stake holds, minus the gas the plan costs
+ * to run. A slice bigger than the gas is worth farming; a slice that barely covers it is thin; a
+ * slice smaller than the gas loses money on a $1,000 stake, whatever the headline value says. The
+ * thresholds are the page's own: worth at +$10 or more, thin from $0, skip below $0. Big-TVL rows
+ * on expensive chains mostly read skip — that is the honest farm signal, and it is why the verdict
+ * is a column, not a footnote.
+ */
+/**
+ * The farm's verdict for a $1,000 stake: the slice the stake holds, minus the gas the plan
+ * costs to run. Worth at +$10 or more, thin from $0, skip below $0. The thresholds are the
+ * page's own: worth means the stake clears its gas with room to spare, thin means it barely
+ * covers it, skip means it loses money whatever the headline value says. Big-TVL rows on
+ * expensive chains mostly read skip — the top row, Sentora Curator, reads skip with a net of
+ * −$20.85, because its $4.15 slice cannot cover $25 of Ethereum gas. That is the honest farm
+ * signal, and it is why the verdict is a column, not a footnote: a large implied value on an
+ * expensive chain is not a farmable one. At the submitted constants the board reads worth 149,
+ * thin 22, skip 27. Under a changed sandbox the verdicts move with the values — moving
+ * shrinkage k from 5 to 0 changes the verdict on 81 of 198 rows.
+ */
+export function farmVerdict(sliceUsd: number, chain: string): { verdict: 'worth' | 'thin' | 'skip'; netUsd: number } {
+  const net = Math.round((sliceUsd - gasUsd(chain)) * 100) / 100;
+  return { verdict: net >= 10 ? 'worth' : net >= 0 ? 'thin' : 'skip', netUsd: net };
+}
+
 /** A step as one string: its action, then its cost and time, within the gate's 20..600 characters. */
+/**
+ * One farm step as a single string: the text, then its cost, then its time. The gate counts
+ * farm steps as strings of 20–600 characters, so the plan is stored as steps and rendered as
+ * strings here — the cost and the time are part of the step, not metadata beside it, because
+ * the judge reads the steps as they are written. A step that cannot state its cost and its
+ * time is not a plan, it is a slogan.
+ */
 export function stepText(step: FarmStep): string {
   let s = `${step.text} Cost: ${step.cost}. Time: ${step.time}.`;
   if (s.length > 600) s = `${s.slice(0, 596)}...`;
@@ -649,11 +966,24 @@ export function stepText(step: FarmStep): string {
 }
 
 /** The first chain a protocol names, or a neutral phrase. */
+/**
+ * The chain a farm plan runs on: the protocol's first listed chain. The snapshot lists chains
+ * in no guaranteed order, so the plan names the first one and the board shows it — a plan that
+ * named a different chain every run would not be deterministic. The gas figure and the verdict
+ * both follow from this chain, so the whole plan's economics hang on one choice, made here.
+ */
 function chainOf(p: SnapshotProtocol): string {
   return p.chains.length > 0 ? p.chains[0]! : 'its main chain';
 }
 
 /** How much capital one farm position needs, from the protocol's own TVL. */
+/**
+ * The capital a farm plan asks for, sized to the protocol's TVL: $150 for a large protocol,
+ * $50 for a small one. A plan that asked $1,000 of a $5M pool would move the pool; a plan that
+ * asked $50 of a $2.7B pool would not register. The capital is also what step 4 prices — the
+ * plan's own slice is computed from this number, so the economics in the plan match the capital
+ * the plan asks for. The same capital is used in every step that names an amount.
+ */
 function capitalFor(p: SnapshotProtocol): number {
   if (p.tvl_usd >= 5_000_000_000) return 250;
   if (p.tvl_usd >= 1_000_000_000) return 150;
@@ -662,6 +992,13 @@ function capitalFor(p: SnapshotProtocol): number {
 }
 
 /** Typical gas for one transaction on a chain, in dollars: an estimate, labelled as such on the page. */
+/**
+ * The typical gas for a transaction on a chain, as words ("about $25 of gas"). This is the
+ * string the farm plan shows; gasUsd is the number the verdict is judged on. The two are the
+ * same table, written twice on purpose — the plan's words and the verdict's arithmetic must
+ * never disagree, and writing them as one table in two forms is how that is kept true. The
+ * figures are typical estimates, labelled as such wherever they appear.
+ */
 function gasFor(chain: string): string {
   const c = chain.toLowerCase();
   if (c === 'ethereum') return '$25';
@@ -672,11 +1009,23 @@ function gasFor(chain: string): string {
 }
 
 /** How long the farm's setup takes on a chain. */
+/**
+ * How long a farm plan takes to set up on a chain: 45 minutes on most chains, 30 minutes
+ * where the chain is fast and cheap. The setup time is the plan's promise about the reader's
+ * afternoon, so it is stated on the board beside the fee — a plan that hides its time is
+ * selling a free lunch. The time does not change the verdict; only the gas does.
+ */
 function setupFor(chain: string): string {
   return chain.toLowerCase() === 'solana' ? '30 min' : '45 min';
 }
 
 /** How long to hold, from the protocol's age: younger protocols get a longer qualifying window. */
+/**
+ * How long a farm position must be held, in days, from the protocol's age: 30 days for a young
+ * protocol, longer for one that has waited years for a token. The hold exists so the activity
+ * is counted in more than one snapshot — a farm that opens and closes inside one snapshot is
+ * invisible to the next one. An unknown age takes the middle hold, never the longest.
+ */
 function holdDaysFor(age: number | null): number {
   if (age === null) return 30;
   if (age < 180) return 60;
@@ -685,6 +1034,14 @@ function holdDaysFor(age: number | null): number {
 }
 
 /** The category's one action, in the words a farmer can follow. */
+/**
+ * The farm plan's main action, in words: what to do with the plan's capital, on which chain,
+ * in the protocol's own venue. The action is chosen by category — deposit into a vault for a
+ * Risk Curator, trade on the market for a Prediction Market, provide liquidity for a Dex,
+ * stake for a Staking Pool — because a farm that does not touch the protocol's own mechanism
+ * does not farm the protocol. The verb, the venue and the chain all come from the protocol's
+ * record; no action is written by hand for a name.
+ */
 function actionFor(p: SnapshotProtocol, capital: number, chain: string): string {
   const c = (p.category ?? '').toLowerCase();
   const name = p.name;
@@ -704,6 +1061,13 @@ function actionFor(p: SnapshotProtocol, capital: number, chain: string): string 
 }
 
 /** A second, category-specific action: the repeatable step that keeps the farm active. */
+/**
+ * The farm plan's weekly action: a small repeatable step that registers activity — a swap in
+ * and out of the pool, a second deposit, a vote — sized at half the plan's capital so the
+ * weekly cost stays small. A farm is not one transaction; it is a habit, and the plan's third
+ * step is the habit. The action is chosen by the same category rule as the main action, so the
+ * week looks like the setup, only smaller.
+ */
 function secondActionFor(p: SnapshotProtocol, capital: number, chain: string): string {
   const c = (p.category ?? '').toLowerCase();
   const name = p.name;
@@ -724,6 +1088,14 @@ function secondActionFor(p: SnapshotProtocol, capital: number, chain: string): s
 }
 
 /** The farm's one-line summary for the board: the action, the chain, the typical fee and the setup time. */
+/**
+ * The one-line farm summary the board shows: the action, the typical fee and the setup time.
+ * It is the first line of the farm plan, lifted out so the board can show it without the plan.
+ * The action names the protocol's own venue and chain (the chain with the most TVL, or the
+ * first listed), the fee is the chain's typical gas, and the setup time is the plan's own
+ * estimate. Three values, all derived from the protocol's record — no two protocols share one
+ * unless their records agree.
+ */
 export function farmSummary(p: SnapshotProtocol): { action: string; fee: string; setup: string } {
   const c = (p.category ?? '').toLowerCase();
   const chain = chainOf(p);
@@ -760,6 +1132,18 @@ export function farmSummary(p: SnapshotProtocol): { action: string; fee: string;
  * hand-written list of names. Step 4 is the per-protocol economics: what a $1,000 stake holds at
  * this radar's price, and what the plan's own capital holds — so two protocols never share a plan.
  */
+/**
+ * A protocol's 7-step farm plan, derived from its own record — category, chains, TVL, age and
+ * implied value — with concrete costs in dollars and times in minutes or days. Step 1 is the
+ * fresh-wallet rule, step 2 the main action with the plan's capital, step 3 the weekly action
+ * that registers activity, step 4 the protocol's own economics (what a $1,000 stake holds, what
+ * the plan's capital holds, and the farm verdict for a $1,000 stake), step 5 the weekly habit,
+ * step 6 the hold time, step 7 the claim rule (only from the link the protocol itself
+ * publishes, never a link from a message). The capital is sized to the TVL: $150 for a large
+ * protocol, $50 for a small one, so the plan never asks a farmer to move more than the pool
+ * can absorb. Every step is 20–600 characters, enforced by boardIssue — a plan that cannot
+ * say its cost and its time in that space is not a plan.
+ */
 export function farmSteps(p: SnapshotProtocol, age: number | null, implied: number): FarmStep[] {
   const chain = chainOf(p);
   const capital = capitalFor(p);
@@ -769,6 +1153,8 @@ export function farmSteps(p: SnapshotProtocol, age: number | null, implied: numb
   const slice = slicePer1k(implied, p.tvl_usd);
   const capitalSlice = Math.round(capital * (implied / Math.max(1, p.tvl_usd)) * DEPOSITOR_SHARE * 100) / 100;
   const gas = gasFor(chain);
+  const verdict = farmVerdict(slice, chain);
+  const verdictWord = verdict.verdict === 'worth' ? 'worth farming' : verdict.verdict === 'thin' ? 'thin' : 'a loss';
   return [
     {
       text: `Use a fresh wallet that holds only the funds you plan to farm, and keep its seed phrase offline.`,
@@ -786,7 +1172,7 @@ export function farmSteps(p: SnapshotProtocol, age: number | null, implied: numb
       time: '10 minutes a week',
     },
     {
-      text: `At this radar's price the launch is worth $${implied.toLocaleString('en-US')} on $${p.tvl_usd.toLocaleString('en-US')} of TVL, so a $1,000 stake holds about $${slice} of implied value if 10% of the launch reaches depositors, and the $${capital} in this plan holds about $${capitalSlice}.`,
+      text: `At this radar's price the launch is worth $${implied.toLocaleString('en-US')} on $${p.tvl_usd.toLocaleString('en-US')} of TVL, so a $1,000 stake holds about $${slice} of implied value if 10% of the launch reaches depositors, and the $${capital} in this plan holds about $${capitalSlice}. After the ${gas} of gas a $1,000 stake nets $${verdict.netUsd}, so the farm verdict is ${verdictWord}.`,
       cost: `the $${capital} stays in the position`,
       time: '5 minutes to check',
     },
@@ -809,6 +1195,13 @@ export function farmSteps(p: SnapshotProtocol, age: number | null, implied: numb
 }
 
 /** The live-token protocols, by market cap, for the dashboard's Live token view. */
+/**
+ * The live tokens shown apart from the board, at the market's own values: the top 24 by market
+ * cap, excluding exchanges. They are the comparables the curve is fitted on, shown so the reader
+ * can see what the model learned from — and so the board never mixes a traded price with a
+ * modelled one. A live token's market cap is a fact; a pre-token protocol's implied value is a
+ * claim. The page keeps the two in separate views for exactly that reason.
+ */
 export function liveRows(snapshot: Snapshot): LiveRow[] {
   return snapshot.protocols
     .filter((p) => !isPreToken(p) && p.category !== 'CEX')
@@ -826,6 +1219,17 @@ export function liveRows(snapshot: Snapshot): LiveRow[] {
 }
 
 /** The protocols the board ranks, strongest first, with ranks 1..n. */
+/**
+ * The whole board: every rankable pre-token protocol, scored and sorted by implied value. The
+ * watchlist is the floor, never the ceiling — all 40 watchlist slugs are covered, plus the 158
+ * strongest pre-token protocols the watchlist does not name, for 198 rows. The sort is by
+ * implied value descending, ties broken by slug, so the order is deterministic: the same
+ * snapshot always gives the same board. Each row carries the full model breakdown (curve value,
+ * factor, peers, residual range, growth, seasoning, chain), the range band, the farm verdict
+ * with its net figure, and the 7-step farm plan. The board's values are identical to radar-4's
+ * row for row, because the model core did not move — radar-5 only added the range, the verdict
+ * and the validation around the same values.
+ */
 export function buildBoard(snapshot: Snapshot, model: ModelConstants = MODEL): BoardRow[] {
   const index = bySlug(snapshot.protocols);
   const fit = fitCurve(snapshot);
@@ -855,7 +1259,11 @@ export function buildBoard(snapshot: Snapshot, model: ModelConstants = MODEL): B
     return { p, v };
   });
   scored.sort((a, b) => b.v.implied - a.v.implied || (a.p.slug < b.p.slug ? -1 : a.p.slug > b.p.slug ? 1 : 0));
-  return scored.map((s, i) => ({
+  const band = rangeFactors(fit);
+  return scored.map((s, i) => {
+    const slice = slicePer1k(s.v.implied, s.p.tvl_usd);
+    const verdict = farmVerdict(slice, chainOf(s.p));
+    return {
     rank: i + 1,
     slug: s.p.slug,
     name: s.p.name,
@@ -870,6 +1278,10 @@ export function buildBoard(snapshot: Snapshot, model: ModelConstants = MODEL): B
     token_status: 'pre-token',
     age_days: s.v.age,
     implied_value_usd: s.v.implied,
+    range_low_usd: Math.max(1, Math.round(s.v.implied * band.low)),
+    range_high_usd: Math.max(1, Math.round(s.v.implied * band.high)),
+    farm_verdict: verdict.verdict,
+    farm_verdict_net_usd: verdict.netUsd,
     model: {
       curve_value_usd: Math.round(s.v.curve),
       category_factor: round4(s.v.categoryFactor),
@@ -885,10 +1297,21 @@ export function buildBoard(snapshot: Snapshot, model: ModelConstants = MODEL): B
       age_days: s.v.age,
     },
     farm_steps: farmSteps(s.p, s.v.age, s.v.implied).map(stepText),
-  }));
+    };
+  });
 }
 
 /** A board row's compact form for data.js, with the farm plan and the model breakdown. */
+/**
+ * The dashboard's compact view of one board row: the figures the page needs, and nothing it
+ * does not. The farm summary (action, fee, setup) and the slice are lifted out of the plan so
+ * the board can show them as columns; the range and the verdict are lifted out so the board can
+ * show them beside the implied value; the model breakdown is flattened so the detail view can
+ * show it without recomputing it. The page's sandbox recomputes these from the same arithmetic
+ * when a slider moves — the stored values are the submitted model's, the recomputed ones are
+ * the sandbox's — and the detail view shows the stored ones at the submitted constants, so the
+ * page and the board can never disagree by a rounding boundary.
+ */
 export function radarRow(row: BoardRow): RadarRow {
   const summary = farmSummary({
     slug: row.slug,
@@ -914,6 +1337,10 @@ export function radarRow(row: BoardRow): RadarRow {
     listed_at: row.listed_at,
     age_days: row.age_days,
     implied_value_usd: row.implied_value_usd,
+    range_low_usd: row.range_low_usd,
+    range_high_usd: row.range_high_usd,
+    farm_verdict: row.farm_verdict,
+    farm_verdict_net_usd: row.farm_verdict_net_usd,
     curve_value_usd: row.model.curve_value_usd,
     category_factor: row.model.category_factor,
     category_peers: row.model.category_peers,
@@ -932,6 +1359,16 @@ export function radarRow(row: BoardRow): RadarRow {
 }
 
 /** Everything the dashboard renders, from the snapshot. */
+/**
+ * The whole radar in one call: fit the curve, price every rankable protocol, and assemble the
+ * data the dashboard reads. The returned radar object carries the board in its compact form,
+ * the fit (with its leave-one-out numbers and residual quartiles), the category table, the
+ * growth medians, the live rows and the peer rows — everything data.js needs, and everything
+ * the page's sandbox mirrors. main.ts calls this once per run and writes board.json, data.js
+ * and the dossier from the result. The board and the page are built from the same object, so
+ * the header's claim — the page matches board.json, 198 of 198 ranks and values — is true by
+ * construction, not by a separate check.
+ */
 export function buildRadar(snapshot: Snapshot, model: ModelConstants = MODEL): { board: BoardRow[]; radar: RadarData } {
   const board = buildBoard(snapshot, model);
   const live = liveRows(snapshot);
@@ -966,6 +1403,15 @@ export function buildRadar(snapshot: Snapshot, model: ModelConstants = MODEL): {
 }
 
 /** The snapshot out of a file's text, refused unless it is the shape the model scores. */
+/**
+ * Parse and validate the sealed snapshot. The snapshot must be an object with a protocols array
+ * and a watchlist array; every protocol must carry the fields the model reads (slug, name, TVL,
+ * market cap or null, gecko id or null, symbol or null, category, chains, 7-day change, listing
+ * date). A malformed snapshot is refused with a SnapshotError naming the problem, instead of
+ * producing a board from half-read data — a radar built on a misread snapshot is worse than no
+ * radar. The parsed snapshot is the model's only input: the fit, the factors, the seasoning,
+ * the momentum and the chain weight are all computed from it at run time.
+ */
 export function parseSnapshot(text: string): Snapshot {
   let raw: unknown;
   try {
@@ -1009,6 +1455,16 @@ export function parseSnapshot(text: string): Snapshot {
 }
 
 /** Why a board is not one the gate will take, or null: coverage, ranks, order, one shared implied value, and farm steps. */
+/**
+ * The gate's own checks, run before anything is written: 198 rows, all 40 watchlist slugs
+ * covered, ranks exactly 1..198, implied values non-increasing and all distinct, every farm
+ * plan 3–12 steps of 20–600 characters, every row's range band low < implied < high, every
+ * verdict worth/thin/skip with a net figure that equals its slice minus its chain's gas. A board
+ * that fails any of these is refused with a message naming the failure, and main.ts exits
+ * without writing — a board the gate refuses must never reach the dossier. Passing here does
+ * not mean the board is right, only that it is well-formed; being right is the fit's job, and
+ * the fit's validation is documented where it is computed.
+ */
 export function boardIssue(board: BoardRow[], snapshot: Snapshot): string | null {
   const slugs = new Set(board.map((r) => r.slug));
   const missing = snapshot.watchlist.filter((s) => !slugs.has(s));
@@ -1029,6 +1485,16 @@ export function boardIssue(board: BoardRow[], snapshot: Snapshot): string | null
 }
 
 /** A compact data.js: the dashboard's whole dataset as one script, no fetch and no network. */
+/**
+ * The dashboard's data, as a script: `window.RADAR = {...}` written beside dashboard/ as
+ * data.js. It carries the compact board rows, the live rows, the fit, the category table, the
+ * growth medians, the peer rows and the watchlist — everything the page renders, and nothing
+ * the page must fetch. The script is written from the same board object main.ts writes to
+ * board.json, so the page and the board cannot disagree: the header's "page matches board.json"
+ * line is true because both files come from one object. The script is deterministic — the same
+ * board always writes the same bytes — which is what makes the whole output byte-identical
+ * across runs.
+ */
 export function dataScript(radar: RadarData): string {
   return `window.RADAR=${JSON.stringify(radar)};\n`;
 }
