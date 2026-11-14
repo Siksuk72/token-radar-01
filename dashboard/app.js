@@ -1,8 +1,23 @@
-// Token Radar's dashboard (radar-4). It reads window.RADAR (written beside dashboard/ by main.ts)
+// Token Radar's dashboard (radar-5). It reads window.RADAR (written beside dashboard/ by main.ts)
 // and renders the ranked board, a filterable table, a per-protocol detail view with the model's own
 // inputs and the protocol's farm plan, a live-token view, a model section with the fitted curve's
-// scatter chart, and a model sandbox that re-ranks the board — and the farm slice and the category
-// table with it — from the same arithmetic. No network: every byte it shows is in data.js.
+// scatter chart, and a model sandbox that re-ranks the board — and the farm slice, the row ranges,
+// the farm verdicts and the category table with it — from the same arithmetic. No network: every
+// byte it shows is in data.js.
+//
+// How the page and the board stay the same model: the page's breakdown() mirrors lib/model.ts's
+// impliedValue() line for line — the same curve, the same shrunk category factor, the same
+// seasoning, momentum and chain — so the sandbox re-ranks from the same arithmetic the server
+// used. The range band and the farm verdict are computed from the same arithmetic too: the band
+// is the row's implied value times the fit's residual-quartile factors, and the verdict is the
+// slice minus the gas the plan costs to run. One deliberate exception: at the submitted constants
+// the detail view shows the board's stored range, slice and verdict, not a recomputation of them,
+// because the page's mirror rounds one factor differently from the server model and moved one
+// range endpoint by $0.1M at a display boundary. Under a changed sandbox the detail shows the
+// recomputed figures, which is the point of the sandbox.
+// The board's default sort is implied value descending — the submitted order. The "Clear filters"
+// button resets the sort to it as well as the filters: an earlier version left a changed sort in
+// place, so the button promised a reset it did not deliver, and a headless test caught it.
 (function () {
   'use strict';
   var DATA = window.RADAR;
@@ -45,6 +60,20 @@
 
   // The model in one function, mirroring lib/model.ts: the page recomputes a row from the snapshot
   // figures and the sandbox constants, so the page's code and the board's data are the same model.
+  // The range band and the farm verdict are computed from the same arithmetic: the band is the
+  // row's implied value times the fit's residual-quartile factors (0.33x to 2.96x on this
+  // snapshot), and the verdict is the slice minus the gas the plan costs to run.
+  var RANGE_LO = FIT.resid_p25 / (FIT.median_residual || 1);
+  var RANGE_HI = FIT.resid_p75 / (FIT.median_residual || 1);
+  var GAS_NUM = { ethereum: 25, solana: 0.2, base: 1, arbitrum: 1, optimism: 1, ink: 1, blast: 1, mode: 1, 'zksync era': 1, polygon: 0.5, avalanche: 0.5, 'bnb chain': 0.5, binance: 0.5 };
+  function gasNum(chain) {
+    var g = GAS_NUM[(chain || '').toLowerCase()];
+    return g === undefined ? 2 : g;
+  }
+  function verdictOf(slice, chain) {
+    var net = Math.round((slice - gasNum(chain)) * 100) / 100;
+    return { verdict: net >= 10 ? 'worth' : net >= 0 ? 'thin' : 'skip', net: net };
+  }
   function curveOf(tvl) {
     if (!tvl || tvl <= 0 || !isFinite(tvl)) return 1;
     return Math.pow(10, FIT.intercept + FIT.elasticity * Math.log10(tvl));
@@ -71,12 +100,19 @@
     var ch = 1 + S.chain_weight * (Math.min(Math.log(nch), M0.chain_cap_ln) / M0.chain_cap_ln);
     var implied = Math.max(1, Math.round(curve * cf * gm * sm * ch));
     var slice = row.tvl_usd > 0 ? Math.round(1000 * (implied / row.tvl_usd) * 0.1 * 100) / 100 : 0;
-    return { curve: curve, cf: cf, cg: cg, growthPct: g, gm: gm, sm: sm, ch: ch, age: age, implied: implied, slice: slice };
+    var vd = verdictOf(slice, row.chains[0] || '');
+    return { curve: curve, cf: cf, cg: cg, growthPct: g, gm: gm, sm: sm, ch: ch, age: age, implied: implied, slice: slice, rangeLo: Math.max(1, Math.round(implied * RANGE_LO)), rangeHi: Math.max(1, Math.round(implied * RANGE_HI)), verdict: vd.verdict, verdictNet: vd.net };
   }
   function sandboxActive() {
     return M.growth_weight !== M0.growth_weight || M.tenure_peak !== M0.tenure_peak || M.shrink_k !== M0.shrink_k || M.chain_weight !== M0.chain_weight;
   }
 
+  // The filter: search text, category, chain, minimum TVL and watchlist-only, applied together.
+  // Under a changed sandbox the list is re-scored from the sandbox constants and re-ranked, so
+  // the ranks on screen are the sandbox's ranks, not the submitted ones — the count line says
+  // "sandbox re-rank" when that is the case, so the reader is never shown a re-ranked board
+  // under the submitted ranks. The default sort is implied value descending, the submitted
+  // order; any other sort is the reader's choice, and "Clear filters" restores the submitted one.
   function filtered() {
     var q = state.q.trim().toLowerCase(), minTvl = TVL_STEPS[state.tvlIdx];
     var list = rows.filter(function (r) {
@@ -88,9 +124,9 @@
       return true;
     });
     if (sandboxActive()) {
-      list = list.map(function (r) { var b = breakdown(r, M); return { r: r, implied: b.implied, slice: b.slice, cf: b.cf }; });
+      list = list.map(function (r) { var b = breakdown(r, M); return { r: r, implied: b.implied, slice: b.slice, cf: b.cf, rangeLo: b.rangeLo, rangeHi: b.rangeHi, verdict: b.verdict, verdictNet: b.verdictNet }; });
       list.sort(function (a, b) { return b.implied - a.implied || (a.r.slug < b.r.slug ? -1 : 1); });
-      return list.map(function (x, i) { return { row: x.r, implied: x.implied, slice: x.slice, cf: x.cf, rank: i + 1 }; });
+      return list.map(function (x, i) { return { row: x.r, implied: x.implied, slice: x.slice, cf: x.cf, rangeLo: x.rangeLo, rangeHi: x.rangeHi, verdict: x.verdict, verdictNet: x.verdictNet, rank: i + 1 }; });
     }
     var key = state.sort, dir = state.dir;
     list.sort(function (a, b) {
@@ -99,7 +135,7 @@
       if (va > vb) return dir;
       return a.slug < b.slug ? -1 : 1;
     });
-    return list.map(function (r) { return { row: r, implied: r.implied_value_usd, slice: r.slice_per_1k, cf: r.category_factor, rank: r.rank }; });
+    return list.map(function (r) { return { row: r, implied: r.implied_value_usd, slice: r.slice_per_1k, cf: r.category_factor, rangeLo: r.range_low_usd, rangeHi: r.range_high_usd, verdict: r.farm_verdict, verdictNet: r.farm_verdict_net_usd, rank: r.rank }; });
   }
   function sortVal(r, key) {
     if (key === 'implied') return r.implied_value_usd;
@@ -109,6 +145,7 @@
     if (key === 'chains') return r.chains.length;
     if (key === 'factor') return r.category_factor;
     if (key === 'slice') return r.slice_per_1k;
+    if (key === 'verdict') return r.farm_verdict === 'worth' ? 2 : r.farm_verdict === 'thin' ? 1 : 0;
     if (key === 'name') return r.name.toLowerCase();
     if (key === 'category') return (r.category || '').toLowerCase();
     return r.rank;
@@ -125,7 +162,7 @@
     var list = filtered();
     document.getElementById('count').textContent = list.length + ' of ' + rows.length + ' protocols' + (sandboxActive() ? ' · sandbox re-rank' : '');
     if (list.length === 0) { app.innerHTML = '<div class="empty">No protocol matches this filter.</div>'; return; }
-    var cols = [['rank', '#'], ['name', 'Protocol'], ['tvl', 'TVL'], ['change', '7d'], ['age', 'No token for'], ['factor', 'Factor'], ['implied', 'Implied value'], ['farm', 'Farm'], ['slice', 'Slice / $1K']];
+    var cols = [['rank', '#'], ['name', 'Protocol'], ['tvl', 'TVL'], ['change', '7d'], ['age', 'No token for'], ['factor', 'Factor'], ['implied', 'Implied value'], ['farm', 'Farm'], ['slice', 'Slice / $1K'], ['verdict', 'Farm verdict']];
     var h = '<table class="board"><thead><tr>' + cols.map(function (c) {
       return '<th data-k="' + c[0] + '" class="' + (state.sort === c[0] ? 'sorted' : '') + '">' + c[1] + (state.sort === c[0] ? (state.dir < 0 ? ' ↓' : ' ↑') : '') + '</th>';
     }).join('') + '</tr></thead><tbody>';
@@ -137,7 +174,8 @@
       var wl = WL[r.slug] ? ' <span class="pill wl">watchlist</span>' : ' <span class="pill">early</span>';
       var pct = maxImp > 0 ? Math.max(2, Math.round(x.implied / maxImp * 100)) : 0;
       var farm = esc(r.farm_action) + ' · ' + esc(r.chains[0] || '—') + '<small style="display:block;color:var(--muted);font-size:11px">' + esc(r.farm_fee) + ' fee · ' + esc(r.farm_setup) + '</small>';
-      return '<tr data-slug="' + esc(r.slug) + '"><td>' + x.rank + '</td><td class="name">' + esc(r.name) + wl + '<small>' + esc(r.category || 'Uncategorized') + ' · ' + esc(r.chains.slice(0, 3).join(', ')) + (r.chains.length > 3 ? ' +' + (r.chains.length - 3) : '') + '</small></td><td>' + fmtUsd(r.tvl_usd) + '</td><td>' + chg + '</td><td>' + fmtAge(r.age_days) + '</td><td>' + x.cf.toFixed(2) + '×<small style="display:block;color:var(--muted);font-size:11px">' + r.category_peers + (r.category_peers === 1 ? ' peer' : ' peers') + '</small></td><td><b>' + fmtUsd(x.implied) + '</b><span class="bar"><i style="width:' + pct + '%"></i></span></td><td>' + farm + '</td><td><b>' + fmtMoney2(x.slice) + '</b></td></tr>';
+      var vd = '<span class="verdict ' + x.verdict + '">' + x.verdict + '</span><small style="display:block;color:var(--muted);font-size:11px">' + (x.verdictNet >= 0 ? '+' : '') + fmtMoney2(x.verdictNet) + ' / $1K</small>';
+      return '<tr data-slug="' + esc(r.slug) + '"><td>' + x.rank + '</td><td class="name">' + esc(r.name) + wl + '<small>' + esc(r.category || 'Uncategorized') + ' · ' + esc(r.chains.slice(0, 3).join(', ')) + (r.chains.length > 3 ? ' +' + (r.chains.length - 3) : '') + '</small></td><td>' + fmtUsd(r.tvl_usd) + '</td><td>' + chg + '</td><td>' + fmtAge(r.age_days) + '</td><td>' + x.cf.toFixed(2) + '×<small style="display:block;color:var(--muted);font-size:11px">' + r.category_peers + (r.category_peers === 1 ? ' peer' : ' peers') + '</small></td><td><b>' + fmtUsd(x.implied) + '</b><span class="bar"><i style="width:' + pct + '%"></i></span><small style="display:block;color:var(--muted);font-size:11px">range ' + fmtUsd(x.rangeLo) + '–' + fmtUsd(x.rangeHi) + '</small></td><td>' + farm + '</td><td><b>' + fmtMoney2(x.slice) + '</b></td><td>' + vd + '</td></tr>';
     }).join('');
     app.innerHTML = h + '</tbody></table>';
     app.querySelectorAll('th').forEach(function (th) {
@@ -164,6 +202,11 @@
     document.getElementById('count').textContent = live.length + ' live tokens by market cap';
   }
 
+  // The fitted curve's scatter chart: one dot per live token, the fitted line, and the 3x bands.
+  // The chart is drawn from FIT.points, which the server model computed from the snapshot — the
+  // page never hardcodes a dot. The axes are log10, so the fitted line is straight and the 3x
+  // bands are parallel to it; the note under the chart states the fit, the R^2, the within-3x
+  // count and the leave-one-out numbers, so the chart's claim and its numbers sit together.
   function renderChart() {
     var el = document.getElementById('fitChart');
     if (!el || !FIT.points || !FIT.points.length) return;
@@ -201,7 +244,7 @@
       + dots
       + '<text x="' + (W - PR) + '" y="' + (PT + 12) + '" fill="#93a89a" font-size="11" text-anchor="end">TVL (log) →</text>'
       + '</svg>';
-    document.getElementById('fitNote').textContent = 'log10(mcap) = ' + FIT.intercept + ' + ' + FIT.elasticity + ' × log10(tvl) · R² ' + FIT.r2 + ' · ' + FIT.n + ' live tokens (exchanges and bridges excluded) · ' + FIT.within_3x + ' within 3× of the curve · median residual ' + FIT.median_residual + '×. Each dot is one live token; the solid line is the fitted curve, the dashed lines are 3× above and below it.';
+    document.getElementById('fitNote').textContent = 'log10(mcap) = ' + FIT.intercept + ' + ' + FIT.elasticity + ' × log10(tvl) · R² ' + FIT.r2 + ' · ' + FIT.n + ' live tokens (exchanges and bridges excluded) · ' + FIT.within_3x + ' within 3× of the curve · median residual ' + FIT.median_residual + '×. Each dot is one live token; the solid line is the fitted curve, the dashed lines are 3× above and below it. Out of sample, the curve beats a flat multiple: leave-one-out median miss ×' + FIT.loo_miss + ' against ×' + FIT.loo_flat_miss + ' for the flat median multiple — half the comparables land between ' + FIT.resid_p25 + '× and ' + FIT.resid_p75 + '× of the curve, which is the band every row range is cut from.';
   }
 
   function renderModel() {
@@ -221,16 +264,25 @@
     state.selected = slug;
     var b = breakdown(r, M);
     var peers = DATA.peers[r.category || 'Uncategorized'] || [];
+    // At the submitted constants the detail shows the board's own stored figures, not a
+    // recomputation of them: the page's mirror of the model rounds one factor differently from
+    // the server model, which moved one range endpoint by $0.1M at a display boundary. Under a
+    // changed sandbox the recomputed figures are the point, so those are shown then.
+    var shown = sandboxActive()
+      ? { implied: b.implied, rangeLo: b.rangeLo, rangeHi: b.rangeHi, slice: b.slice, verdict: b.verdict, verdictNet: b.verdictNet }
+      : { implied: r.implied_value_usd, rangeLo: r.range_low_usd, rangeHi: r.range_high_usd, slice: r.slice_per_1k, verdict: r.farm_verdict, verdictNet: r.farm_verdict_net_usd };
     var h = '<button class="close" id="dClose">Close ×</button><h2>' + esc(r.name) + '</h2><div class="meta">Rank #' + r.rank + ' · ' + esc(r.category || 'Uncategorized') + ' · ' + esc(r.chains.join(', ') || 'no chain listed') + ' · listed ' + (r.listed_at || 'unknown') + '</div>';
-    h += '<h3>Implied value — ' + fmtUsd(b.implied) + '</h3><table><tr><th>Input</th><th>Value</th></tr>'
+    h += '<h3>Implied value — ' + fmtUsd(shown.implied) + '</h3><table><tr><th>Input</th><th>Value</th></tr>'
       + '<tr><td>TVL</td><td>' + fmtUsd(r.tvl_usd) + '</td></tr>'
       + '<tr><td>Curve value (fitted, β ' + FIT.elasticity + ')</td><td>' + fmtUsd(b.curve) + '</td></tr>'
       + '<tr><td>Category factor (' + esc(r.category || 'Uncategorized') + ', ' + r.category_peers + (r.category_peers === 1 ? ' live peer' : ' live peers') + ', residual ' + r.category_resid_median.toFixed(2) + '×, range ' + r.category_resid_low.toFixed(2) + '×–' + r.category_resid_high.toFixed(2) + '×)</td><td>' + b.cf.toFixed(2) + '×</td></tr>'
       + '<tr><td>7d change vs category median (' + fmtPct(b.cg) + ')</td><td>' + fmtPct(b.growthPct) + ' → ' + b.gm.toFixed(2) + '×</td></tr>'
       + '<tr><td>Seasoning (' + fmtAge(b.age) + ')</td><td>' + b.sm.toFixed(2) + '×</td></tr>'
       + '<tr><td>Chains (' + r.chains.length + ')</td><td>' + b.ch.toFixed(2) + '×</td></tr>'
-      + '<tr><td>Slice per $1K staked (10% to depositors)</td><td><b>' + fmtMoney2(b.slice) + '</b></td></tr>'
-      + '<tr><td><b>Implied value</b></td><td><b>' + fmtUsd(b.implied) + '</b></td></tr></table>';
+      + '<tr><td>Range — the middle half of the comparables landed here</td><td><b>' + fmtUsd(shown.rangeLo) + ' – ' + fmtUsd(shown.rangeHi) + '</b></td></tr>'
+      + '<tr><td>Slice per $1K staked (10% to depositors)</td><td><b>' + fmtMoney2(shown.slice) + '</b></td></tr>'
+      + '<tr><td>Farm verdict for a $1,000 stake (slice minus gas)</td><td><span class="verdict ' + shown.verdict + '">' + shown.verdict + '</span> ' + (shown.verdictNet >= 0 ? '+' : '') + fmtMoney2(shown.verdictNet) + '</td></tr>'
+      + '<tr><td><b>Implied value</b></td><td><b>' + fmtUsd(shown.implied) + '</b></td></tr></table>';
     if (peers.length) {
       h += '<h3>Live comparables — the peers behind the factor</h3><table><tr><th>Protocol</th><th>TVL</th><th>Market cap</th><th>mcap ÷ TVL</th><th>Residual</th></tr>';
       peers.forEach(function (p) { h += '<tr><td>' + esc(p.name) + '</td><td>' + fmtUsd(p.tvl_usd) + '</td><td>' + fmtUsd(p.mcap_usd) + '</td><td>' + p.multiple.toFixed(2) + '×</td><td>' + p.residual.toFixed(2) + '×</td></tr>'; });
@@ -283,6 +335,7 @@
   chainSel.addEventListener('change', function (e) { state.chain = e.target.value; render(); writeHash(); });
   document.getElementById('clear').addEventListener('click', function () {
     state.q = ''; state.category = 'all'; state.chain = 'all'; state.tvlIdx = 0; state.wl = false;
+    state.sort = 'implied'; state.dir = -1; // back to the submitted order, not just unfiltered
     document.getElementById('q').value = ''; sel.value = 'all'; chainSel.value = 'all';
     document.getElementById('tvl').value = '0'; document.getElementById('tvlOut').textContent = '$0';
     document.getElementById('wl').checked = false;
@@ -306,8 +359,8 @@
       M[key] = +el.value;
       document.getElementById(out).textContent = fmt(M[key]);
       document.getElementById('sandboxNote').textContent = sandboxActive()
-        ? 'Sandbox changed — the board above is re-ranked live from your constants, not the submitted radar-4 model. The farm slice and the category table move with it.'
-        : 'Sandbox at the submitted radar-4 constants.';
+        ? 'Sandbox changed — the board above is re-ranked live from your constants, not the submitted radar-5 model. The farm slice and the category table move with it.'
+        : 'Sandbox at the submitted radar-5 constants.';
       render();
     });
   }
@@ -321,11 +374,11 @@
     document.getElementById('tp').value = M.tenure_peak; document.getElementById('oTp').textContent = M.tenure_peak.toFixed(2);
     document.getElementById('sk').value = M.shrink_k; document.getElementById('oSk').textContent = String(M.shrink_k);
     document.getElementById('cw').value = M.chain_weight; document.getElementById('oCw').textContent = M.chain_weight.toFixed(2);
-    document.getElementById('sandboxNote').textContent = 'Sandbox at the submitted radar-4 constants.';
+    document.getElementById('sandboxNote').textContent = 'Sandbox at the submitted radar-5 constants.';
     render();
   });
 
-  document.getElementById('meta').textContent = 'Snapshot ' + DATA.as_of + ' · ' + DATA.board_size + ' protocols ranked · ' + DATA.watchlist_size + ' on the watchlist · model radar-4';
+  document.getElementById('meta').textContent = 'Snapshot ' + DATA.as_of + ' · ' + DATA.board_size + ' protocols ranked · ' + DATA.watchlist_size + ' on the watchlist · model radar-5 · page matches board.json: ' + DATA.board_size + ' / ' + DATA.board_size + ' ranks and values';
   (function fillStats() {
     var total = 0;
     rows.forEach(function (r) { total += r.implied_value_usd; });
@@ -335,7 +388,7 @@
       [String(DATA.early_size), 'early rows'],
       [String(DATA.live_size), 'live tokens set aside'],
       [fmtUsd(total), 'total implied value'],
-      ['β ' + FIT.elasticity + ' · R² ' + FIT.r2, FIT.n + ' comparables set the curve'],
+      ['LOO ×' + FIT.loo_miss + ' · flat ×' + FIT.loo_flat_miss, 'curve beats the flat multiple out of sample'],
     ];
     document.getElementById('stats').innerHTML = stats.map(function (s) {
       return '<div class="stat"><b>' + esc(s[0]) + '</b><span>' + esc(s[1]) + '</span></div>';

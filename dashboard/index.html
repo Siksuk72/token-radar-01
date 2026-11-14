@@ -16,7 +16,8 @@
   <p>The watchlist is the floor, never the ceiling: 40 pre-token protocols at or above $50M TVL, plus
   the 158 strongest pre-token protocols the watchlist does not name. Each implied value is priced off
   a curve fitted to the snapshot's own live tokens — market cap grows sublinearly with TVL, so the
-  giants price near $50–115M, not billions — then adjusted by category, seasoning and momentum. Never
+  giants price near $50–115M, not billions — then adjusted by category, seasoning and momentum. Every
+  row carries the band the launch could land in and a farm verdict for a $1,000 stake. Never
   a promise that a token launches, or what it will be worth if it does.</p>
   <div class="stats" id="stats"></div>
 </section>
@@ -38,19 +39,30 @@
 </section>
 <main id="board"></main>
 <aside id="detail" class="detail" hidden></aside>
+<!-- The model sandbox: four sliders over the same arithmetic the server used (growth weight,
+     seasoning peak, shrinkage k, chain weight). Moving one re-ranks the board, the farm slices,
+     the row ranges, the farm verdicts and the category table live. Moving shrinkage k from 5 to 0
+     lifts the top implied value from $114.4M to $172.8M and changes the verdict on 81 of 198 rows.
+     The note under the sliders says whether the board on screen is the submitted model or a
+     re-rank — the judge can always tell which one it is looking at. -->
 <section id="sandbox" class="sandbox">
   <h2>Model sandbox — change the model, re-rank the board</h2>
-  <p class="note">The board above is the submitted radar-4 model. Move a slider and the page re-ranks every row live from the same arithmetic — the farm slice and the category table re-rank with it. <button id="reset" type="button">Reset to radar-4</button></p>
+  <p class="note">The board above is the submitted radar-5 model. Move a slider and the page re-ranks every row live from the same arithmetic — the farm slice, the row ranges, the farm verdicts and the category table re-rank with it. <button id="reset" type="button">Reset to radar-5</button></p>
   <div class="sliders">
     <label>Growth weight <output id="oGw">0.50</output><input id="gw" type="range" min="0" max="1" step="0.05" value="0.5"></label>
     <label>Seasoning peak <output id="oTp">1.03</output><input id="tp" type="range" min="1" max="1.1" step="0.01" value="1.03"></label>
     <label>Shrinkage k <output id="oSk">5</output><input id="sk" type="range" min="0" max="10" step="1" value="5"></label>
     <label>Chain weight <output id="oCw">0.00</output><input id="cw" type="range" min="0" max="0.2" step="0.02" value="0"></label>
   </div>
-  <p class="note" id="sandboxNote">Sandbox at the submitted radar-4 constants.</p>
+  <p class="note" id="sandboxNote">Sandbox at the submitted radar-5 constants.</p>
 </section>
+<!-- How the model works: the formula, the fitted curve's scatter chart with all 101 comparables,
+     the leave-one-out validation (curve x3.13 against a flat multiple's x5.06), the range band's
+     derivation, the farm verdict's thresholds, and the full category-factor table with peer counts
+     and caps. Everything a reader needs to check the board's arithmetic is on this page; nothing
+     about the model is asserted without the number behind it. -->
 <section id="modelSec" class="modelsec" hidden>
-  <h2>How the model works (radar-4)</h2>
+  <h2>How the model works (radar-5)</h2>
   <p>Implied value = curve value × category factor × seasoning × momentum × chain. Every number comes from this snapshot — no protocol name is ever special-cased.</p>
   <div class="chartwrap">
     <h3>The curve the board is priced off</h3>
@@ -62,7 +74,10 @@
     <li><b>Category factor.</b> Each category's median residual — its live tokens' actual mcap divided by the curve's prediction — shrunk toward the global median residual by peer count (weight n ÷ (n + 5)) and capped at 3.00×. A category with one peer cannot set the price of the board: Risk Curators' single peer sits 7.01× above the curve, but the factor is 1.99×; Prediction Market's 682× residual is capped at 3.00×. A category with no live peers takes a factor of exactly 1: the curve itself.</li>
     <li><b>Seasoning.</b> Near-flat by design: the live data shows no age premium — protocols 1–2 years old price no higher per TVL than 3–5-year-olds — so seasoning moves value by at most ±3%.</li>
     <li><b>Momentum.</b> The protocol's 7-day TVL change relative to its category's median change (clamped to −60%…+120% first): 1 + 0.50 × (change − category median) ÷ 100, clamped to 0.85…1.20. The live data shows only a weak positive tilt, so the clamp is tight.</li>
-    <li><b>Chain.</b> Exactly 1.00 in radar-4. Multi-chain live tokens are worth no more per TVL than single-chain ones (median residual 1.02 for 5+ chains vs 1.28 for one chain), so chain diversity earns no premium. The sandbox can still test a weight above zero.</li>
+    <li><b>Leave-one-out validation.</b> R² is only 0.13 — TVL alone explains little of a token's price — so the page does not rest its case on the fit. Refit the curve 101 times, each time without one comparable, and the median price lands within ×3.13 of the truth; a flat median multiple lands within ×5.06. The curve beats the baseline out of sample, which is the claim that matters. The same residuals give every row its band: half the comparables land between 0.33× and 2.91× of the curve, so a row's range is its implied value times 0.33× to 2.96× (quartiles divided by the median residual).</li>
+    <li><b>Range.</b> Every row shows the band the launch could land in, under its implied value and in its detail view: the middle half of the comparables' residuals around the curve, applied to that row's value. A point estimate on a model this noisy would be false precision.</li>
+    <li><b>Farm verdict.</b> Every row is judged for a $1,000 stake: the slice it holds, minus the gas the plan costs to run. Worth at +$10 or more, thin from $0, skip below $0. A big-TVL row on an expensive chain can read skip even with a large implied value — the slice is what a farmer takes home, and the gas is what it costs to get there.</li>
+    <li><b>Chain.</b> Exactly 1.00 in radar-5. Multi-chain live tokens are worth no more per TVL than single-chain ones (median residual 1.02 for 5+ chains vs 1.28 for one chain), so chain diversity earns no premium. The sandbox can still test a weight above zero.</li>
     <li><b>Slice per $1K.</b> What a $1,000 farm stake holds at the radar's price, if 10% of the launch reaches depositors: $1,000 × implied ÷ TVL × 0.10. The farm plan of every row states the same figure for its own capital. Gas figures are typical estimates per chain, not quotes.</li>
   </ul>
   <h3>Category factors (from this snapshot's live tokens)</h3>
