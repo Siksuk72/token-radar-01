@@ -65,6 +65,9 @@ table.board{width:100%;border-collapse:collapse;background:var(--panel);border-r
 .sandbox button{background:var(--panel2);color:var(--text);border:1px solid var(--line);border-radius:8px;padding:5px 12px;cursor:pointer;font:inherit}
 .modelsec ul{margin:8px 0;padding-left:20px}
 .modelsec li{margin:8px 0}
+.modelsec h3{margin:18px 0 8px;font-size:14px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted)}
+.chartwrap{background:var(--bg);border:1px solid var(--line);border-radius:var(--radius);padding:12px 14px;margin:12px 0}
+.chartwrap svg{display:block;max-width:760px}
 table.cats{width:100%;border-collapse:collapse;font-size:13px}
 .cats th,.cats td{padding:5px 8px;border-bottom:1px solid var(--line);text-align:right}
 .cats th:first-child,.cats td:first-child{text-align:left}
