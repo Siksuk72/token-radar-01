@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Token Radar — pre-token protocols ranked by implied value</title>
+<link rel="stylesheet" href="app.css">
+</head>
+<body>
+<header class="top">
+  <div class="brand"><span class="dot"></span> TOKEN RADAR</div>
+  <div class="sub" id="meta"></div>
+</header>
+<section class="hero">
+  <h1>40 watchlist protocols, ranked by implied value</h1>
+  <p>The watchlist is the floor, never the ceiling: 40 pre-token protocols at or above $50M TVL, plus
+  the 158 strongest pre-token protocols the watchlist does not name. Each implied value is this
+  radar's own claim from the snapshot's figures — TVL, 7-day growth, tenure with no token, chain
+  spread — never a promise that a token launches, or what it will be worth if it does.</p>
+  <div class="stats" id="stats"></div>
+</section>
+<nav class="tabs" id="tabs">
+  <button data-tab="board" class="on">Pre-token board</button>
+  <button data-tab="live">Live tokens</button>
+  <button data-tab="model">How the model works</button>
+</nav>
+<section class="controls" id="controls">
+  <input id="q" type="search" placeholder="Search name or slug…" aria-label="Search">
+  <select id="cat" aria-label="Category"><option value="all">All categories</option></select>
+  <select id="chain" aria-label="Chain"><option value="all">All chains</option></select>
+  <label class="tvl">Min TVL <output id="tvlOut">$0</output>
+    <input id="tvl" type="range" min="0" max="9" step="1" value="0" aria-label="Minimum TVL">
+  </label>
+  <label class="chk"><input id="wl" type="checkbox"> Watchlist only</label>
+  <button id="clear" type="button">Clear filters</button>
+  <span class="count" id="count"></span>
+</section>
+<main id="board"></main>
+<aside id="detail" class="detail" hidden></aside>
+<section id="sandbox" class="sandbox">
+  <h2>Model sandbox — change the model, re-rank the board</h2>
+  <p class="note">The board above is the submitted radar-3 model. Move a slider and the page re-ranks every row live from the same arithmetic — the model is real, not a hardcoded list. <button id="reset" type="button">Reset to radar-3</button></p>
+  <div class="sliders">
+    <label>Growth weight <output id="oGw">0.50</output><input id="gw" type="range" min="0" max="1" step="0.05" value="0.5"></label>
+    <label>Tenure peak <output id="oTp">1.20</output><input id="tp" type="range" min="1" max="1.4" step="0.05" value="1.2"></label>
+    <label>Shrinkage k <output id="oSk">3</output><input id="sk" type="range" min="0" max="10" step="1" value="3"></label>
+    <label>Chain weight <output id="oCw">0.10</output><input id="cw" type="range" min="0" max="0.2" step="0.02" value="0.1"></label>
+  </div>
+  <p class="note" id="sandboxNote">Sandbox at the submitted radar-3 constants.</p>
+</section>
+<section id="modelSec" class="modelsec" hidden>
+  <h2>How the model works (radar-3)</h2>
+  <p>Implied value = TVL × category multiple × growth multiplier × tenure multiplier × chain multiplier. Every number comes from this snapshot — no protocol name is ever special-cased.</p>
+  <ul>
+    <li><b>Category multiple.</b> The live-token protocols in the same category, each one's mcap ÷ TVL; the trimmed median (middle half, top and bottom quartiles dropped), shrunk toward the global median by peer count — weight n ÷ (n + 3) — and capped at 3.00×. The cap is high enough that a genuinely dear category still prices far above a cheap one, but no single peer's extreme ratio becomes the multiple. A category with no live peers takes the global median. The table shows every category's peer count and peer range, so any multiple can be audited back to the snapshot.</li>
+    <li><b>Growth multiplier.</b> The protocol's 7-day TVL change relative to its category's median 7-day change (clamped to −60%…+120% first): 1 + 0.50 × (change − category median) ÷ 100, clamped to 0.50…1.60.</li>
+    <li><b>Tenure multiplier.</b> A hump in age: 0.85 at listing, rising to 1.20 at 730 days of running with no token, then gently falling back toward 1.00 for very old no-token protocols.</li>
+    <li><b>Chain multiplier.</b> 1 + 0.10 × ln(chains) ÷ ln(16), capped at 1.10 — a small boost for protocols live on more chains.</li>
+  </ul>
+  <h3>Category multiples (from this snapshot's live tokens)</h3>
+  <table id="catTable" class="cats"><thead><tr><th>Category</th><th>Peers</th><th>Median</th><th>Trimmed</th><th>Peer range</th><th>Multiple</th></tr></thead><tbody></tbody></table>
+  <p class="note" id="srcNote"></p>
+</section>
+<script src="../data.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
