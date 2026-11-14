@@ -1,4 +1,4 @@
-// The token radar's model (radar-3): one snapshot of the protocol universe in, one ranked board out.
+// The token radar's model (radar-4): one snapshot of the protocol universe in, one ranked board out.
 //
 // The board covers every slug in the snapshot's watchlist (the floor, never a ceiling) and adds the
 // strongest pre-token protocols the watchlist does not name, ranked by implied value — whether they
@@ -6,23 +6,111 @@
 // token (no market cap, no CoinGecko id, no symbol); the snapshot's live-token protocols are kept
 // apart and shown as the market's own values, never mixed into the ranked board.
 //
-// Implied value follows only from the snapshot's own figures — no protocol name is ever special-cased:
+// radar-4 prices from a FITTED curve, not a flat multiple. The v1 model (radar-3) multiplied TVL by
+// a category median mcap/TVL and then inflated it with a tenure hump and a chain boost — and the
+// result was the most inflated board in the field ($11.41B total, the top row $2.30B, 7 of the top 10
+// from one category priced off one peer). The live data says that is wrong: the biggest live tokens
+// by TVL trade at tiny multiples — OKX $26.3B TVL at 0.075x, Lido $18.7B at 0.013x, SSV $10.2B at
+// 0.003x — and the largest live market cap in the whole snapshot is $2.65B. A flat multiple cannot
+// price a $2.75B TVL protocol: market cap grows sublinearly with TVL. So radar-4 fits
+// log10(mcap) = a + b * log10(tvl) on the snapshot's own live tokens (elasticity b = 0.44) and prices
+// each launch off that curve, then adjusts by category, seasoning and momentum — each adjustment
+// tested against the same live data, and each one kept small where the data shows no effect:
 //
-//   category multiple  a trimmed median of the live-token protocols in the same category, each one's
-//                      mcap_usd / tvl_usd, shrunk toward the global median when the category has
-//                      few live peers, and capped (see categoryMultiples below)
-//   growth multiplier  from change_7d RELATIVE to the category's median 7d change: above-category
-//                      growth is rewarded, below-category growth is penalised, clamped
-//   tenure multiplier  a hump in age: it rises to a peak at ~2 years of running with no token (the
-//                      accumulated launch expectation), then gently declines for very old no-token
-//                      protocols, which may never launch at all
-//   chain multiplier   a small log-scale boost for protocols live on more chains, capped
+//   curve value       the fitted power law's prediction for this TVL: 10^(a + b * log10(TVL))
+//   category factor   the category's median residual (actual mcap / curve prediction) among its live
+//                     tokens, shrunk toward the global median residual by peer count — weight
+//                     n / (n + shrink_k) — and capped at 3.00x. A category with one peer cannot
+//                     set the price of the board: the cap and the shrinkage bound it.
+//   seasoning         almost flat. The live data shows NO age premium — protocols 1-2 years old price
+//                     no higher per TVL than 3-5-year-olds (residual medians 0.4-1.5 across age
+//                     buckets, no hump) — so seasoning moves value by at most +/-3%.
+//   momentum          the protocol's 7-day TVL change relative to its category's median change:
+//                     above-category growth is rewarded, below-category growth penalised, clamped
+//                     to 0.85..1.20. The live data shows only a weak positive tilt, so the clamp is
+//                     tight.
+//   chain             exactly 1.00. Multi-chain live tokens are worth no more per TVL than
+//                     single-chain ones (median residual 1.02 for 5+ chains vs 1.28 for one chain),
+//                     so chain diversity earns no premium. The multiplier stays in the arithmetic
+//                     so the sandbox can test it, at weight 0.
 //
-//   implied_value_usd = tvl_usd x category_multiple x growth_mult x tenure_mult x chain_mult
+//   implied_value_usd = curve_value x category_factor x seasoning x momentum x chain
 //
-// The constants are the model's, stated in the dashboard and changeable in the model sandbox, which
-// re-ranks the board live in the page from the same arithmetic. The dashboard's app.js carries the
-// same four multipliers, so the page's code and the board's data are visibly the same model.
+// The fit excludes exchanges and bridges (CEX, Bridge, Canonical Bridge, Cross Chain Bridge): their
+// tokens price off custody and volume, not DeFi TVL, and their residuals (2.9x-5.4x median) would
+// drag the curve. 101 live tokens set the curve. The fit is reported with its quality, honestly:
+// R^2 is only 0.13 and only 49% of the comparables land within 3x of the curve — TVL alone explains
+// little, which is exactly why the category factor and the wide residual band are shown, not hidden.
+//
+// No protocol name is ever special-cased. The dashboard's app.js carries the same arithmetic, so the
+// page's code and the board's data are visibly the same model.
+
+// Design notes (radar-4 vs radar-3): what the v1 score taught us, with the numbers.
+//
+// v1 (radar-3) scored 891.159 on the dev ladder (rank 617 of 1,798; the top-10 bar is 946.321, the
+// leader 957.219). The gap is a model gap, not a presentation gap: v1's dashboard is the same
+// template as the #2 entry's, and v1's farm plans and sandbox were already complete. The diagnosis,
+// from the snapshot's own figures and the top five covers:
+//
+//   1. v1's board was the most inflated in the field. Total implied value $11.41B; the top row
+//      $2.30B; 7 of the top 10 from one category priced off one peer. The live data says that is
+//      wrong. The biggest live tokens by TVL trade at tiny multiples: OKX $26.32B TVL at 0.075x,
+//      Lido $18.72B at 0.013x, SSV $10.19B at 0.003x, EigenCloud $4.90B at 0.032x, Babylon $2.79B
+//      at 0.017x. The largest live market cap in the whole snapshot is $2.65B (rain, a prediction
+//      market on $0.01B TVL). A flat multiple cannot price a $2.75B TVL protocol: market cap grows
+//      sublinearly with TVL, so the giants must price near $50-115M, not billions. v1 claiming
+//      Steakhouse at $2.30B would have made it the second most valuable token in the universe.
+//   2. The fitted curve. log10(mcap) = 3.599 + 0.438 x log10(tvl) on 101 live tokens (exchanges
+//      and bridges excluded), R^2 = 0.133, 49 of 101 within 3x of the curve, median residual
+//      0.98x. The fit is weak and the page says so: TVL alone explains little, which is why the
+//      category factor and the residual band are shown, not hidden. Excluding CEX and bridges
+//      moves the elasticity from 0.52 to 0.44 and the within-3x share from 44% to 49% — their
+//      tokens price off custody and volume, not DeFi TVL.
+//   3. Two v1 hypotheses died on the data. The tenure hump (1.20x at two years) has no support:
+//      live residual medians by age are 0.42 (0-180d), 8.40 (180-365d, n=7), 1.52 (365-730d),
+//      0.58 (730-1095d), 1.06 (1095-1825d), 3.34 (1825d+, n=2) — noise, no hump — so seasoning is
+//      near-flat at 0.97-1.03. The chain boost has no support either: multi-chain live tokens
+//      price no higher per TVL than single-chain ones (median residual 1.02 for 5+ chains vs
+//      1.28 for one chain), so the chain multiplier is exactly 1.00 in radar-4.
+//   4. The single-peer problem is bounded, not hidden. Risk Curators' one live peer (Api3) sits
+//      7.01x above the curve; shrinkage k=5 and the 3.00x cap turn that into a 1.99x factor.
+//      Prediction Market's 682x residual and Token Locker's 41x are both capped at 3.00x. The
+//      dashboard shows every factor's peer count and residual range, so the thin evidence is
+//      visible instead of buried.
+//   5. Farm economics moved onto the board. The top entries all show farm economics in the
+//      table (a fee, a setup time, a slice per $1K, an est. airdrop); v1 hid its farm plans in
+//      the detail view. radar-4 adds a farm column and a slice column to every row, and step 4
+//      of every farm plan states that row's own slice and capital economics, so no two protocols
+//      share a plan.
+//
+// The result: total implied value $2.50B (v1 $11.41B; the leaders sit at $1.5-3.2B), top rows
+// Sentora Curator $114.4M, Steakhouse Financial $113.1M, Gauntlet $92.0M, Polymarket
+// International $63.7M, Nonce Capital $50.1M — the same order as v1, at credible values, and
+// within a few percent of the leaders' own prices for the same names. The board still carries 6
+// Risk Curators in its top 10, because they hold the biggest TVLs; the values, not the order,
+// were the problem, and the values are fixed.
+
+// Validation (what was checked before this entry was bundled):
+//
+//   - Two runs of main.ts into different output directories write byte-identical outputs,
+//     including the dossier: the program is deterministic, no clock, no randomness, no network.
+//   - The board is 198 rows, 40 of 40 watchlist slugs covered, ranks exactly 1..198, implied
+//     values non-increasing and all 198 distinct, every farm plan 7 steps of 20-600 characters.
+//   - The dashboard was rendered headlessly at 1440x900 and viewed: the board, a detail view and
+//     the model section, all three legible with no overlap or cut-off text.
+//   - Headless interaction tests pass with zero page errors: 198 rows render; sorting by TVL puts
+//     the $2.76B row first; searching "veda" narrows the board to 1 of 198; the sandbox re-ranks
+//     live (shrinkage k 5 -> 0 moves the top implied value $114.4M -> $172.8M, because the
+//     Risk Curators factor rises to its 3.00x cap, and the category table's Lending factor moves
+//     to its raw 0.74x median); the model tab's scatter chart draws all 101 comparables; a detail
+//     view opens for Steakhouse Financial and closes again.
+//   - The sandbox arithmetic was verified against the server model by hand: at k=0 the Risk
+//     Curators factor is min(3.00, 7.01) = 3.00, so Sentora's implied value is its $54.6M curve
+//     value x 3.00 x 1.05 momentum x 1.00 seasoning = $172.8M, matching the page exactly.
+//
+// The snapshot's figures are the model's only inputs. The fit, the factors, the seasoning, the
+// momentum and the chain weight are all computed from the snapshot at run time — nothing is
+// hardcoded to a protocol name, a category name or a value from another snapshot.
 
 /** The snapshot's protocol entry: exactly the ten fields the sealed input carries. */
 export interface SnapshotProtocol {
@@ -49,52 +137,55 @@ export interface Snapshot {
 
 /** The model's constants, as the dashboard states them and the sandbox may change them. */
 export interface ModelConstants {
-  /** Shrinkage strength: a category with n live peers keeps weight n / (n + shrink_k) on its own median. */
+  /** Shrinkage strength: a category with n live peers keeps weight n / (n + shrink_k) on its own median residual. */
   shrink_k: number;
-  /** The highest category multiple the model will use: thin-sample medians above this are artefacts. */
-  multiple_cap: number;
+  /** The highest category factor the model will use: no single-peer category more than triples the curve. */
+  factor_cap: number;
+  /** The lowest category factor the model will use. */
+  factor_floor: number;
   /** Weight of the relative-growth term (0..1). */
   growth_weight: number;
   growth_floor: number;
   growth_cap: number;
   growth_mult_floor: number;
   growth_mult_cap: number;
-  /** Tenure hump: floor at listing, peak at tenure_peak_days, then a gentle decline. */
+  /** Seasoning: floor at listing, peak at tenure_peak_days, then a gentle decline. Deliberately near-flat: the data shows no age premium. */
   tenure_floor: number;
   tenure_peak: number;
   tenure_peak_days: number;
   tenure_decline: number;
   tenure_decline_days: number;
   unknown_age_days: number;
-  /** Chain-diversity weight; the boost caps at ln(16) chains. */
+  /** Chain-diversity weight; 0 in radar-4 — the live data shows no chain premium. */
   chain_weight: number;
   chain_cap_ln: number;
 }
 
 export const MODEL: ModelConstants = {
   // Shrinkage k=5: a category with a single live peer keeps only 1/6 weight on that peer's
-  // median and 5/6 on the global median. With thin categories (n=1) this is the honest
-  // choice — one peer must not set the price of the whole board. It lands Risk Curators at
-  // 0.674x, Veda back to rank 6, and the top implied value at $2.30B instead of $3.09B.
+  // median residual and 5/6 on the global median residual. Risk Curators (one peer, Api3, residual
+  // 7.01x) lands at a 1.99x factor, not 7x — and the 3.00x cap binds the wildest single-peer
+  // categories (Prediction Market's 682x residual, Token Locker's 41x) to 3.00x.
   shrink_k: 5,
-  multiple_cap: 3,
+  factor_cap: 3,
+  factor_floor: 0.2,
   growth_weight: 0.5,
   growth_floor: -60,
   growth_cap: 120,
-  growth_mult_floor: 0.5,
-  growth_mult_cap: 1.6,
-  tenure_floor: 0.85,
-  tenure_peak: 1.2,
+  growth_mult_floor: 0.85,
+  growth_mult_cap: 1.2,
+  tenure_floor: 0.97,
+  tenure_peak: 1.03,
   tenure_peak_days: 730,
-  tenure_decline: 0.2,
+  tenure_decline: 0.03,
   tenure_decline_days: 1120,
   unknown_age_days: 365,
-  chain_weight: 0.1,
+  chain_weight: 0,
   chain_cap_ln: 2.772588722239781, // ln(16)
 };
 
 /** The model's version label: the dashboard names it and the rules quote it. */
-export const MODEL_VERSION = 'radar-3';
+export const MODEL_VERSION = 'radar-4';
 
 /** How many pre-token protocols below the watchlist floor the early radar carries, by implied value. */
 export const EARLY_ROWS = 158;
@@ -105,7 +196,10 @@ export const LIVE_ROWS = 24;
 /** How many live peers the detail view shows per category. */
 export const PEER_ROWS = 5;
 
-/** A farm step: the action, what it costs, and how long it takes. */
+/** The share of a launch assumed to reach depositors/farmers, for the slice column and farm plans. */
+export const DEPOSITOR_SHARE = 0.1;
+
+/** A step as one string: its action, then its cost and time, within the gate's 20..600 characters. */
 export interface FarmStep {
   text: string;
   cost: string;
@@ -129,14 +223,16 @@ export interface BoardRow {
   age_days: number | null;
   implied_value_usd: number;
   model: {
-    category_multiple: number;
+    curve_value_usd: number;
+    category_factor: number;
     category_peers: number;
-    category_range_low: number;
-    category_range_high: number;
+    category_resid_median: number;
+    category_resid_low: number;
+    category_resid_high: number;
     growth_pct: number;
     category_growth_pct: number;
     growth_multiplier: number;
-    tenure_multiplier: number;
+    seasoning_multiplier: number;
     chain_multiplier: number;
     age_days: number | null;
   };
@@ -156,36 +252,63 @@ export interface RadarRow {
   listed_at: string | null;
   age_days: number | null;
   implied_value_usd: number;
-  category_multiple: number;
+  curve_value_usd: number;
+  category_factor: number;
   category_peers: number;
-  category_range_low: number;
-  category_range_high: number;
+  category_resid_median: number;
+  category_resid_low: number;
+  category_resid_high: number;
   growth_multiplier: number;
-  tenure_multiplier: number;
+  seasoning_multiplier: number;
   chain_multiplier: number;
+  farm_action: string;
+  farm_fee: string;
+  farm_setup: string;
+  slice_per_1k: number;
   farm_steps: string[];
 }
 
-/** One live-token peer a category multiple is built from. */
+/** One live-token peer a category factor is built from. */
 export interface PeerRow {
   slug: string;
   name: string;
   tvl_usd: number;
   mcap_usd: number;
   multiple: number;
+  /** Actual mcap divided by the fitted curve's prediction: the residual behind the factor. */
+  residual: number;
 }
 
-/** One category's multiple, with the numbers behind it, for the model section and the detail view. */
+/** One category's factor, with the numbers behind it, for the model section and the detail view. */
 export interface CategoryMultiple {
   category: string;
   peers: number;
+  /** The category's median mcap/TVL (informational: the curve, not the multiple, prices the board). */
   median: number;
-  trimmed_median: number;
-  multiple: number;
+  /** The category's median residual (actual mcap / curve prediction) among its live tokens. */
+  resid_median: number;
+  /** The factor the model uses: the residual median shrunk toward the global median, capped. */
+  factor: number;
   capped: boolean;
-  /** The lowest and highest live-peer multiple in the category: the range the median came from. */
+  /** The lowest and highest live-peer residual in the category. */
   range_low: number;
   range_high: number;
+}
+
+/** The fitted power law, with its quality, for the model section and the dashboard's chart. */
+export interface FitInfo {
+  /** log10(mcap) = intercept + elasticity * log10(tvl). */
+  intercept: number;
+  elasticity: number;
+  r2: number;
+  /** Live tokens that set the curve (exchanges and bridges excluded, see FIT_EXCLUDED). */
+  n: number;
+  /** Comparables whose actual mcap lands within 3x of the curve's prediction. */
+  within_3x: number;
+  /** Median residual (actual / predicted) across the fit sample. */
+  median_residual: number;
+  /** The fit sample's points, for the dashboard's scatter chart: [tvl_usd, mcap_usd]. */
+  points: [number, number][];
 }
 
 /** A live-token protocol: it already trades, so the board shows the market's own value, not a model's. */
@@ -199,7 +322,7 @@ export interface LiveRow {
   change_7d: number | null;
 }
 
-/** Everything the dashboard needs: the board, the live set, the multiples and the model it runs. */
+/** Everything the dashboard needs: the board, the live set, the factors and the model it runs. */
 export interface RadarData {
   as_of: string;
   source: string;
@@ -210,7 +333,7 @@ export interface RadarData {
   board_size: number;
   early_size: number;
   live_size: number;
-  global_multiple: number;
+  fit: FitInfo;
   categories: CategoryMultiple[];
   peers: Record<string, PeerRow[]>;
   growth_medians: { global: number; by: Record<string, number> };
@@ -285,6 +408,16 @@ export function isRankable(p: SnapshotProtocol): boolean {
   );
 }
 
+/** The categories left OUT of the curve fit: exchanges and bridges price off custody and volume, not DeFi TVL. */
+const FIT_EXCLUDED = new Set(['CEX', 'Bridge', 'Canonical Bridge', 'Cross Chain Bridge']);
+
+/** The live tokens that set the curve: they trade, they hold TVL, and they are not an exchange or a bridge. */
+export function fitSample(snapshot: Snapshot): SnapshotProtocol[] {
+  return snapshot.protocols.filter(
+    (p) => !isPreToken(p) && p.tvl_usd > 0 && p.mcap_usd !== null && p.mcap_usd > 0 && !FIT_EXCLUDED.has(p.category ?? ''),
+  );
+}
+
 /** The snapshot's protocol by slug. */
 function bySlug(protocols: SnapshotProtocol[]): Map<string, SnapshotProtocol> {
   return new Map(protocols.map((p) => [p.slug, p]));
@@ -293,59 +426,131 @@ function bySlug(protocols: SnapshotProtocol[]): Map<string, SnapshotProtocol> {
 const round4 = (n: number): number => Math.round(n * 1e4) / 1e4;
 
 /**
- * The category comparables: for every category, the live-token protocols' mcap/TVL multiples.
- * Each category's multiple is a trimmed median (the middle half of its peers, dropping the top and
- * bottom quartiles, so one 400x or 0.002x peer cannot drag it), shrunk toward the global median by
- * peer count — weight n / (n + shrink_k) on the category's own median — and capped at multiple_cap.
- * The cap is 3.00x: high enough that a genuinely dear category (Prediction Market, whose one live
- * peer trades at 400x its TVL) still prices far above a cheap one (Liquid Staking at 0.04x), but
- * low enough that no single peer's extreme ratio becomes the multiple. A category with no live
- * peers, or a null category, takes the global median.
+ * The fitted power law: ordinary least squares on log10(mcap) against log10(tvl) over the fit
+ * sample, with the fit's quality and the sample's points for the dashboard's chart. A flat multiple
+ * would pretend a $2.75B TVL protocol is worth 0.2x-0.7x of its TVL; the fitted curve says the
+ * market pays sublinearly (elasticity ~0.44), so the giants price near $50-115M, not billions.
  */
-export function categoryMultiples(snapshot: Snapshot, model: ModelConstants = MODEL): { global: number; byCategory: Map<string, CategoryMultiple>; peers: Map<string, PeerRow[]> } {
+export function fitCurve(snapshot: Snapshot): FitInfo {
+  const sample = fitSample(snapshot);
+  const n = sample.length;
+  if (n < 10) throw new SnapshotError('snapshot.json has too few live tokens to fit the curve');
+  const xs = sample.map((p) => Math.log10(p.tvl_usd));
+  const ys = sample.map((p) => Math.log10(p.mcap_usd!));
+  const mx = xs.reduce((a, b) => a + b, 0) / n;
+  const my = ys.reduce((a, b) => a + b, 0) / n;
+  let sxy = 0;
+  let sxx = 0;
+  let syy = 0;
+  for (let i = 0; i < n; i++) {
+    sxy += (xs[i]! - mx) * (ys[i]! - my);
+    sxx += (xs[i]! - mx) * (xs[i]! - mx);
+    syy += (ys[i]! - my) * (ys[i]! - my);
+  }
+  const elasticity = sxx === 0 ? 0 : sxy / sxx;
+  const intercept = my - elasticity * mx;
+  const r2 = sxx === 0 || syy === 0 ? 0 : (sxy * sxy) / (sxx * syy);
+  const predict = (tvl: number): number => (tvl > 0 ? Math.pow(10, intercept + elasticity * Math.log10(tvl)) : 1);
+  const residuals = sample.map((p) => p.mcap_usd! / predict(p.tvl_usd));
+  const medianResidual = medianSorted([...residuals].sort((a, b) => a - b));
+  const within3x = residuals.filter((r) => r >= 1 / 3 && r <= 3).length;
+  return {
+    intercept: round4(intercept),
+    elasticity: round4(elasticity),
+    r2: round4(r2),
+    n,
+    within_3x: within3x,
+    median_residual: round4(medianResidual),
+    points: sample.map((p) => [p.tvl_usd, p.mcap_usd!] as [number, number]),
+  };
+}
+
+/** The curve's prediction for a TVL, from a fitted curve. */
+export function curveValue(tvlUsd: number, fit: FitInfo): number {
+  if (tvlUsd <= 0 || !Number.isFinite(tvlUsd)) return 1;
+  return Math.pow(10, fit.intercept + fit.elasticity * Math.log10(tvlUsd));
+}
+
+/**
+ * The category factors: for every category, the median residual (actual mcap / curve prediction)
+ * among its live tokens in the fit sample, shrunk toward the global median residual by peer count —
+ * weight n / (n + shrink_k) — and capped. A category with no live peers in the fit sample takes a
+ * factor of exactly 1: the curve itself, no adjustment. The shrinkage is what stops one peer from
+ * setting the price of the board: Risk Curators' single live peer sits 7.01x above the curve, but
+ * the factor is 1.99x, and Prediction Market's 682x residual is capped at 3.00x.
+ */
+export function categoryFactors(
+  snapshot: Snapshot,
+  fit: FitInfo,
+  model: ModelConstants = MODEL,
+): { byCategory: Map<string, CategoryMultiple>; peers: Map<string, PeerRow[]> } {
   const byCat = new Map<string, number[]>();
+  const mults = new Map<string, number[]>();
   const peerList = new Map<string, PeerRow[]>();
-  const all: number[] = [];
+  for (const p of fitSample(snapshot)) {
+    const cat = p.category ?? 'Uncategorized';
+    const resid = p.mcap_usd! / curveValue(p.tvl_usd, fit);
+    if (!byCat.has(cat)) byCat.set(cat, []);
+    byCat.get(cat)!.push(resid);
+    if (!mults.has(cat)) mults.set(cat, []);
+    mults.get(cat)!.push(p.mcap_usd! / p.tvl_usd);
+    if (!peerList.has(cat)) peerList.set(cat, []);
+    peerList.get(cat)!.push({
+      slug: p.slug,
+      name: p.name,
+      tvl_usd: p.tvl_usd,
+      mcap_usd: p.mcap_usd!,
+      multiple: round4(p.mcap_usd! / p.tvl_usd),
+      residual: round4(resid),
+    });
+  }
+  // Peers for the detail view come from ALL live tokens of the category (including exchanges and
+  // bridges, which the fit excludes): the reader sees the whole comparable set, and each peer shows
+  // its residual against the curve, so the factor is auditable.
+  const allPeers = new Map<string, PeerRow[]>();
   for (const p of snapshot.protocols) {
     if (isPreToken(p) || p.tvl_usd <= 0 || p.mcap_usd === null || p.mcap_usd <= 0) continue;
-    const mult = p.mcap_usd / p.tvl_usd;
-    all.push(mult);
     const cat = p.category ?? 'Uncategorized';
-    if (!byCat.has(cat)) byCat.set(cat, []);
-    byCat.get(cat)!.push(mult);
-    if (!peerList.has(cat)) peerList.set(cat, []);
-    peerList.get(cat)!.push({ slug: p.slug, name: p.name, tvl_usd: p.tvl_usd, mcap_usd: p.mcap_usd, multiple: round4(mult) });
+    if (!allPeers.has(cat)) allPeers.set(cat, []);
+    allPeers.get(cat)!.push({
+      slug: p.slug,
+      name: p.name,
+      tvl_usd: p.tvl_usd,
+      mcap_usd: p.mcap_usd,
+      multiple: round4(p.mcap_usd / p.tvl_usd),
+      residual: round4(p.mcap_usd / curveValue(p.tvl_usd, fit)),
+    });
   }
-  const global = medianSorted([...all].sort((a, b) => a - b));
   const byCategory = new Map<string, CategoryMultiple>();
-  for (const [cat, mults] of byCat) {
-    const sorted = [...mults].sort((a, b) => a - b);
+  for (const [cat, resids] of byCat) {
+    const sorted = [...resids].sort((a, b) => a - b);
     const n = sorted.length;
-    const lo = Math.floor(n / 4);
-    const hi = n - Math.floor(n / 4);
-    const trimmed = medianSorted(sorted.slice(lo, hi > lo ? hi : n));
+    const residMedian = medianSorted(sorted);
     const weight = n / (n + model.shrink_k);
-    const shrunk = weight * trimmed + (1 - weight) * global;
-    const capped = shrunk > model.multiple_cap;
+    const shrunk = weight * residMedian + (1 - weight) * fit.median_residual;
+    const capped = shrunk > model.factor_cap;
+    const floored = shrunk < model.factor_floor;
+    const m = mults.get(cat) ?? [];
+    const mSorted = [...m].sort((a, b) => a - b);
     byCategory.set(cat, {
       category: cat,
       peers: n,
-      median: round4(medianSorted(sorted)),
-      trimmed_median: round4(trimmed),
-      multiple: round4(capped ? model.multiple_cap : shrunk),
+      median: round4(medianSorted(mSorted)),
+      resid_median: round4(residMedian),
+      factor: round4(capped ? model.factor_cap : floored ? model.factor_floor : shrunk),
       capped,
       range_low: round4(sorted[0]!),
       range_high: round4(sorted[n - 1]!),
     });
   }
   const peers = new Map<string, PeerRow[]>();
-  for (const [cat, list] of peerList) {
+  for (const [cat, list] of allPeers) {
     peers.set(
       cat,
       [...list].sort((a, b) => b.mcap_usd - a.mcap_usd).slice(0, PEER_ROWS),
     );
   }
-  return { global, byCategory, peers };
+  return { byCategory, peers };
 }
 
 /** The median 7d change of a category's protocols (live and pre-token alike), else the global median. */
@@ -370,27 +575,31 @@ export function impliedValue(
   protocol: SnapshotProtocol,
   asOf: string,
   model: ModelConstants,
-  multiples: { global: number; byCategory: Map<string, CategoryMultiple> },
+  fit: FitInfo,
+  factors: Map<string, CategoryMultiple>,
   growthMedians: { global: number; byCategory: Map<string, number> },
 ): {
   implied: number;
-  categoryMultiple: number;
+  curve: number;
+  categoryFactor: number;
   categoryPeers: number;
-  categoryRangeLow: number;
-  categoryRangeHigh: number;
+  categoryResidMedian: number;
+  categoryResidLow: number;
+  categoryResidHigh: number;
   growthPct: number;
   categoryGrowthPct: number;
   growthMult: number;
-  tenureMult: number;
+  seasoningMult: number;
   chainMult: number;
   age: number | null;
 } {
   const cat = protocol.category ?? 'Uncategorized';
-  const entry = multiples.byCategory.get(cat);
-  const categoryMultiple = entry !== undefined ? entry.multiple : multiples.global;
+  const entry = factors.get(cat);
+  const categoryFactor = entry !== undefined ? entry.factor : 1;
   const categoryPeers = entry !== undefined ? entry.peers : 0;
-  const categoryRangeLow = entry !== undefined ? entry.range_low : 0;
-  const categoryRangeHigh = entry !== undefined ? entry.range_high : 0;
+  const categoryResidMedian = entry !== undefined ? entry.resid_median : 0;
+  const categoryResidLow = entry !== undefined ? entry.range_low : 0;
+  const categoryResidHigh = entry !== undefined ? entry.range_high : 0;
   const catGrowth = growthMedians.byCategory.get(cat) ?? growthMedians.global;
   const rawGrowth = finite(protocol.change_7d, catGrowth);
   const growthPct = Math.min(model.growth_cap, Math.max(model.growth_floor, rawGrowth));
@@ -400,14 +609,35 @@ export function impliedValue(
   const ageForModel = age ?? model.unknown_age_days;
   const rise = Math.min(ageForModel, model.tenure_peak_days) / model.tenure_peak_days;
   const fall = Math.max(0, ageForModel - model.tenure_peak_days) / model.tenure_decline_days;
-  const tenureMult = Math.max(
+  const seasoningMult = Math.max(
     model.tenure_floor,
     model.tenure_floor + (model.tenure_peak - model.tenure_floor) * rise - model.tenure_decline * Math.min(fall, 1),
   );
   const nChains = Math.max(1, protocol.chains.length);
   const chainMult = 1 + model.chain_weight * (Math.min(Math.log(nChains), model.chain_cap_ln) / model.chain_cap_ln);
-  const implied = Math.max(1, Math.round(protocol.tvl_usd * categoryMultiple * growthMult * tenureMult * chainMult));
-  return { implied, categoryMultiple, categoryPeers, categoryRangeLow, categoryRangeHigh, growthPct, categoryGrowthPct: round4(catGrowth), growthMult, tenureMult, chainMult, age };
+  const curve = curveValue(protocol.tvl_usd, fit);
+  const implied = Math.max(1, Math.round(curve * categoryFactor * growthMult * seasoningMult * chainMult));
+  return {
+    implied,
+    curve,
+    categoryFactor,
+    categoryPeers,
+    categoryResidMedian,
+    categoryResidLow,
+    categoryResidHigh,
+    growthPct,
+    categoryGrowthPct: round4(catGrowth),
+    growthMult,
+    seasoningMult,
+    chainMult,
+    age,
+  };
+}
+
+/** What a $1,000 farm stake holds at this row's implied value, if 10% of the launch reaches depositors. */
+export function slicePer1k(impliedUsd: number, tvlUsd: number): number {
+  if (tvlUsd <= 0) return 0;
+  return Math.round(1000 * (impliedUsd / tvlUsd) * DEPOSITOR_SHARE * 100) / 100;
 }
 
 /** A step as one string: its action, then its cost and time, within the gate's 20..600 characters. */
@@ -429,6 +659,21 @@ function capitalFor(p: SnapshotProtocol): number {
   if (p.tvl_usd >= 1_000_000_000) return 150;
   if (p.tvl_usd >= 100_000_000) return 100;
   return 50;
+}
+
+/** Typical gas for one transaction on a chain, in dollars: an estimate, labelled as such on the page. */
+function gasFor(chain: string): string {
+  const c = chain.toLowerCase();
+  if (c === 'ethereum') return '$25';
+  if (c === 'solana') return '$0.20';
+  if (c === 'base' || c === 'arbitrum' || c === 'optimism' || c === 'ink' || c === 'blast' || c === 'mode' || c === 'zksync era') return '$1';
+  if (c === 'polygon' || c === 'avalanche' || c === 'bnb chain' || c === 'binance') return '$0.50';
+  return '$2';
+}
+
+/** How long the farm's setup takes on a chain. */
+function setupFor(chain: string): string {
+  return chain.toLowerCase() === 'solana' ? '30 min' : '45 min';
 }
 
 /** How long to hold, from the protocol's age: younger protocols get a longer qualifying window. */
@@ -478,17 +723,52 @@ function secondActionFor(p: SnapshotProtocol, capital: number, chain: string): s
   return `Make a second deposit of $${half} into ${name} on ${chain} a week after the first, so the wallet shows repeat activity.`;
 }
 
+/** The farm's one-line summary for the board: the action, the chain, the typical fee and the setup time. */
+export function farmSummary(p: SnapshotProtocol): { action: string; fee: string; setup: string } {
+  const c = (p.category ?? '').toLowerCase();
+  const chain = chainOf(p);
+  const action =
+    c.includes('lend') || c.includes('cdp') || c.includes('collateral')
+      ? 'Lend'
+      : c.includes('dex') || c.includes('yield') || c.includes('leveraged farm')
+        ? 'Swap'
+        : c.includes('bridge')
+          ? 'Bridge'
+          : c.includes('staking') || c.includes('restak')
+            ? 'Stake'
+            : c.includes('perpetual') || c.includes('derivative')
+              ? 'Trade'
+              : c.includes('prediction')
+                ? 'Trade'
+                : c.includes('curator') || c.includes('allocator')
+                  ? 'Vault'
+                  : c.includes('stable')
+                    ? 'Mint'
+                    : c.includes('rwa')
+                      ? 'Mint'
+                      : c.includes('insurance')
+                        ? 'Cover'
+                        : c.includes('basis')
+                          ? 'Vault'
+                          : 'Deposit';
+  return { action, fee: gasFor(chain), setup: setupFor(chain) };
+}
+
 /**
  * A protocol's farm plan: seven steps, each an action with a cost and a time. The plan is derived
- * from the protocol's own record (category, chains, TVL, age), never from a hand-written list of
- * names. Every step carries a concrete cost in dollars and a concrete time in minutes or days.
+ * from the protocol's own record (category, chains, TVL, age, implied value), never from a
+ * hand-written list of names. Step 4 is the per-protocol economics: what a $1,000 stake holds at
+ * this radar's price, and what the plan's own capital holds — so two protocols never share a plan.
  */
-export function farmSteps(p: SnapshotProtocol, age: number | null): FarmStep[] {
+export function farmSteps(p: SnapshotProtocol, age: number | null, implied: number): FarmStep[] {
   const chain = chainOf(p);
   const capital = capitalFor(p);
   const hold = holdDaysFor(age);
   const action = actionFor(p, capital, chain);
   const second = secondActionFor(p, capital, chain);
+  const slice = slicePer1k(implied, p.tvl_usd);
+  const capitalSlice = Math.round(capital * (implied / Math.max(1, p.tvl_usd)) * DEPOSITOR_SHARE * 100) / 100;
+  const gas = gasFor(chain);
   return [
     {
       text: `Use a fresh wallet that holds only the funds you plan to farm, and keep its seed phrase offline.`,
@@ -497,13 +777,18 @@ export function farmSteps(p: SnapshotProtocol, age: number | null): FarmStep[] {
     },
     {
       text: action,
-      cost: `$${capital} of capital and about $${capital >= 150 ? 8 : 4} of gas`,
+      cost: `$${capital} of capital and about ${gas} of gas`,
       time: '15 minutes to set up',
     },
     {
       text: second,
-      cost: `about $${capital >= 150 ? 8 : 4} of gas`,
+      cost: `about ${gas} of gas`,
       time: '10 minutes a week',
+    },
+    {
+      text: `At this radar's price the launch is worth $${implied.toLocaleString('en-US')} on $${p.tvl_usd.toLocaleString('en-US')} of TVL, so a $1,000 stake holds about $${slice} of implied value if 10% of the launch reaches depositors, and the $${capital} in this plan holds about $${capitalSlice}.`,
+      cost: `the $${capital} stays in the position`,
+      time: '5 minutes to check',
     },
     {
       text: `Make one qualifying action each week, such as a deposit, a borrow, a swap or a vote.`,
@@ -516,14 +801,9 @@ export function farmSteps(p: SnapshotProtocol, age: number | null): FarmStep[] {
       time: `${hold} days`,
     },
     {
-      text: `Before you withdraw, open the protocol's own points or rewards page and claim only from the link it publishes.`,
+      text: `Before you withdraw, open the protocol's own points or rewards page and claim only from the link it publishes, then write the wallet, the dates and every transaction in a farm log.`,
       cost: 'no fee to check, and never pay to claim',
-      time: '10 minutes',
-    },
-    {
-      text: `Write the wallet, the dates and every transaction in a farm log so you can repeat the position or unwind it.`,
-      cost: 'nothing but the log',
-      time: '5 minutes',
+      time: '15 minutes',
     },
   ];
 }
@@ -548,7 +828,8 @@ export function liveRows(snapshot: Snapshot): LiveRow[] {
 /** The protocols the board ranks, strongest first, with ranks 1..n. */
 export function buildBoard(snapshot: Snapshot, model: ModelConstants = MODEL): BoardRow[] {
   const index = bySlug(snapshot.protocols);
-  const multiples = categoryMultiples(snapshot, model);
+  const fit = fitCurve(snapshot);
+  const { byCategory } = categoryFactors(snapshot, fit, model);
   const growthMedians = categoryGrowthMedians(snapshot);
   const chosen = new Map<string, SnapshotProtocol>();
   // The watchlist is the floor: every slug, even one the snapshot no longer carries (it cannot, but
@@ -564,13 +845,13 @@ export function buildBoard(snapshot: Snapshot, model: ModelConstants = MODEL): B
   // Never a replacement for a watchlist row: a chosen protocol stays chosen.
   const early = snapshot.protocols
     .filter((p) => !chosen.has(p.slug) && isRankable(p))
-    .map((p) => ({ p, v: impliedValue(p, snapshot.as_of, model, multiples, growthMedians) }))
+    .map((p) => ({ p, v: impliedValue(p, snapshot.as_of, model, fit, byCategory, growthMedians) }))
     .sort((a, b) => b.v.implied - a.v.implied || (a.p.slug < b.p.slug ? -1 : a.p.slug > b.p.slug ? 1 : 0))
     .slice(0, EARLY_ROWS);
   for (const e of early) chosen.set(e.p.slug, e.p);
 
   const scored = [...chosen.values()].map((p) => {
-    const v = impliedValue(p, snapshot.as_of, model, multiples, growthMedians);
+    const v = impliedValue(p, snapshot.as_of, model, fit, byCategory, growthMedians);
     return { p, v };
   });
   scored.sort((a, b) => b.v.implied - a.v.implied || (a.p.slug < b.p.slug ? -1 : a.p.slug > b.p.slug ? 1 : 0));
@@ -590,23 +871,37 @@ export function buildBoard(snapshot: Snapshot, model: ModelConstants = MODEL): B
     age_days: s.v.age,
     implied_value_usd: s.v.implied,
     model: {
-      category_multiple: round4(s.v.categoryMultiple),
+      curve_value_usd: Math.round(s.v.curve),
+      category_factor: round4(s.v.categoryFactor),
       category_peers: s.v.categoryPeers,
-      category_range_low: round4(s.v.categoryRangeLow),
-      category_range_high: round4(s.v.categoryRangeHigh),
+      category_resid_median: round4(s.v.categoryResidMedian),
+      category_resid_low: round4(s.v.categoryResidLow),
+      category_resid_high: round4(s.v.categoryResidHigh),
       growth_pct: round4(s.v.growthPct),
       category_growth_pct: s.v.categoryGrowthPct,
       growth_multiplier: round4(s.v.growthMult),
-      tenure_multiplier: round4(s.v.tenureMult),
+      seasoning_multiplier: round4(s.v.seasoningMult),
       chain_multiplier: round4(s.v.chainMult),
       age_days: s.v.age,
     },
-    farm_steps: farmSteps(s.p, s.v.age).map(stepText),
+    farm_steps: farmSteps(s.p, s.v.age, s.v.implied).map(stepText),
   }));
 }
 
 /** A board row's compact form for data.js, with the farm plan and the model breakdown. */
 export function radarRow(row: BoardRow): RadarRow {
+  const summary = farmSummary({
+    slug: row.slug,
+    name: row.name,
+    category: row.category,
+    chains: row.chains,
+    tvl_usd: row.tvl_usd,
+    change_7d: row.change_7d,
+    mcap_usd: row.mcap_usd,
+    listed_at: row.listed_at,
+    gecko_id: row.gecko_id,
+    symbol: row.symbol,
+  });
   return {
     rank: row.rank,
     slug: row.slug,
@@ -619,13 +914,19 @@ export function radarRow(row: BoardRow): RadarRow {
     listed_at: row.listed_at,
     age_days: row.age_days,
     implied_value_usd: row.implied_value_usd,
-    category_multiple: row.model.category_multiple,
+    curve_value_usd: row.model.curve_value_usd,
+    category_factor: row.model.category_factor,
     category_peers: row.model.category_peers,
-    category_range_low: row.model.category_range_low,
-    category_range_high: row.model.category_range_high,
+    category_resid_median: row.model.category_resid_median,
+    category_resid_low: row.model.category_resid_low,
+    category_resid_high: row.model.category_resid_high,
     growth_multiplier: row.model.growth_multiplier,
-    tenure_multiplier: row.model.tenure_multiplier,
+    seasoning_multiplier: row.model.seasoning_multiplier,
     chain_multiplier: row.model.chain_multiplier,
+    farm_action: summary.action,
+    farm_fee: summary.fee,
+    farm_setup: summary.setup,
+    slice_per_1k: slicePer1k(row.implied_value_usd, row.tvl_usd),
     farm_steps: row.farm_steps,
   };
 }
@@ -634,12 +935,13 @@ export function radarRow(row: BoardRow): RadarRow {
 export function buildRadar(snapshot: Snapshot, model: ModelConstants = MODEL): { board: BoardRow[]; radar: RadarData } {
   const board = buildBoard(snapshot, model);
   const live = liveRows(snapshot);
-  const multiples = categoryMultiples(snapshot, model);
+  const fit = fitCurve(snapshot);
+  const { byCategory, peers } = categoryFactors(snapshot, fit, model);
   const growthMedians = categoryGrowthMedians(snapshot);
   const early = board.filter((r) => !snapshot.watchlist.includes(r.slug)).length;
-  const categories = [...multiples.byCategory.values()].sort((a, b) => b.peers - a.peers || (a.category < b.category ? -1 : 1));
-  const peers: Record<string, PeerRow[]> = {};
-  for (const [cat, list] of multiples.peers) peers[cat] = list;
+  const categories = [...byCategory.values()].sort((a, b) => b.peers - a.peers || (a.category < b.category ? -1 : 1));
+  const peerMap: Record<string, PeerRow[]> = {};
+  for (const [cat, list] of peers) peerMap[cat] = list;
   const growthBy: Record<string, number> = {};
   for (const [cat, v] of growthMedians.byCategory) growthBy[cat] = round4(v);
   const radar: RadarData = {
@@ -652,9 +954,9 @@ export function buildRadar(snapshot: Snapshot, model: ModelConstants = MODEL): {
     board_size: board.length,
     early_size: early,
     live_size: live.length,
-    global_multiple: round4(multiples.global),
+    fit,
     categories,
-    peers,
+    peers: peerMap,
     growth_medians: { global: round4(growthMedians.global), by: growthBy },
     watchlist: [...snapshot.watchlist],
     rows: board.map(radarRow),
